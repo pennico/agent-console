@@ -79,8 +79,14 @@ Needed only for the "⌨" buttons: changes that need sudo, such as systemd
 timers.
 
 ```bash
-sudo apt install -y ttyd
-sudo install -m 644 deploy/systemd/agent-console-term@.service /etc/systemd/system/
+sudo apt install -y ttyd        # Debian 12, Debian 14+, Ubuntu 22.04+
+# Debian 13 has no ttyd package. Use the project's static build instead, and check it
+# against the SHA256SUMS file published on the same release page:
+#   curl -fLO https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
+#   sha256sum ttyd.x86_64          # must equal the ttyd.x86_64 line in SHA256SUMS
+#   sudo install -m 755 ttyd.x86_64 /usr/local/bin/ttyd
+sed "s#/usr/bin/ttyd#$(command -v ttyd)#" deploy/systemd/agent-console-term@.service \
+  | sudo tee /etc/systemd/system/agent-console-term@.service >/dev/null
 sudo systemctl daemon-reload && sudo systemctl enable --now "agent-console-term@$USER"
 ```
 
