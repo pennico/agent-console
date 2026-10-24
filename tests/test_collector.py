@@ -47,7 +47,8 @@ def test_schedules(status):
 def test_chats(status):
     chat = status["claude_agent"]["chats"][0]
     assert chat["title"] == "Test chat" and chat["kind"] == "Remote Control"
-    assert status["claude_agent"]["rc_running"]
+    assert status["claude_agent"]["rc_running"] and status["claude_agent"]["rc_loop"]
+    assert status["claude_agent"]["claude_processes"] == 2           # pids stripped before matching
 
 
 def test_infisical_reports_names_never_values(status):

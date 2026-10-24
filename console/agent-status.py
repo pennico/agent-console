@@ -138,8 +138,10 @@ def container(name):
 
 
 def processes(name):
-    out = sh(["docker", "top", name, "-eo", "args"])
-    return out.splitlines()[1:] if out else []
+    """Command lines inside a container. docker top refuses ps output without a PID
+    column, so ask for pid,args and drop the pid."""
+    out = sh(["docker", "top", name, "-eo", "pid,args"])
+    return [line.split(None, 1)[1] for line in out.splitlines()[1:] if len(line.split(None, 1)) == 2] if out else []
 
 
 def has_proc(procs, needle):

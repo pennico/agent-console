@@ -29,11 +29,15 @@ open(os.environ["FAKE_CALLS"], "a").write("docker " + " ".join(a) + "\n")
 if a[:1] == ["inspect"]:
     print(json.dumps({"Status": "running", "StartedAt": "2026-10-20T10:00:00.000000000Z", "OOMKilled": False}) + "|0")
 elif a[:1] == ["top"]:
-    print("COMMAND")
+    # like the real daemon: ps options must yield a PID column
+    if len(a) > 2 and "pid" not in a[-1].lower().split(","):
+        sys.stderr.write("Error response from daemon: Couldn't find PID field in ps output\n"); sys.exit(1)
+    print("PID COMMAND")
     if a[1] == "agent-runner":
-        print("python3 /app/supervisor.py\npython3 /app/telegram_bridge.py\npython3 -m agent_memory\nbash /app/projects/beta/dispatcher/run.sh")
+        print("101 python3 -u /app/supervisor.py\n102 python3 -u /app/telegram_bridge.py\n"
+              "103 python3 -u /app/agent_memory/server.py\n104 bash /app/projects/beta/dispatcher/run.sh")
     elif a[1] == "claude-agent":
-        print("bash rc-loop.sh\nclaude remote-control --name test")
+        print("201 bash rc-loop.sh\n202 claude remote-control --name test\n203 claude")
 elif a[:1] == ["logs"]:
     print("[run] start 2026-10-23T07:30:00\n[run] 4 new of 120\n[daemon] next run at 2026-10-24 07:30:00")
 elif a[:2] == ["exec", "agent-runner"] and "grep" in a:
