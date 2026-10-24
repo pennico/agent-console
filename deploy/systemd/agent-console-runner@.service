@@ -1,0 +1,20 @@
+# Agent console action runner. Instance name = the user it runs as:
+#   sudo systemctl enable --now agent-console-runner@<user>
+# Installed somewhere other than /opt/agent-console? Change ExecStart with `systemctl edit`.
+[Unit]
+Description=Agent console action runner for %i (allow-listed actions; local socket only)
+After=docker.service
+
+[Service]
+User=%i
+Environment=AGENT_CONSOLE_CONFIG=/etc/agent-console/console.toml
+ExecStart=/usr/bin/python3 /opt/agent-console/agent-console.py runner
+Restart=on-failure
+RestartSec=5
+# No NoNewPrivileges: the backend switch and the Infisical restart use sudo rules you already have (if any).
+ProtectSystem=full
+PrivateTmp=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

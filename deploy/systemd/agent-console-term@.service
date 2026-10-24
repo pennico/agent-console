@@ -1,0 +1,18 @@
+# Agent console terminal: ttyd on loopback running term.py (never a shell) for changes
+# that need sudo. Instance name = the user it runs as:
+#   sudo systemctl enable --now agent-console-term@<user>
+# --auth-header makes ttyd require the login header that Tailscale Serve adds.
+[Unit]
+Description=Agent console terminal for %i (ttyd running term.py for changes that need sudo)
+After=network-online.target
+
+[Service]
+User=%i
+Environment=AGENT_CONSOLE_CONFIG=/etc/agent-console/console.toml
+ExecStart=/usr/bin/ttyd --interface lo --port 8098 --writable --url-arg --max-clients 2 --auth-header Tailscale-User-Login -t "titleFixed=Agent console terminal" -t fontSize=15 -t disableLeaveAlert=true /usr/bin/python3 /opt/agent-console/term.py
+Restart=on-failure
+RestartSec=5
+# No NoNewPrivileges/ProtectSystem: the changes it runs use sudo (with your password, typed in the terminal).
+
+[Install]
+WantedBy=multi-user.target

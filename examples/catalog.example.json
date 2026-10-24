@@ -1,0 +1,92 @@
+{
+ "_note": "Example catalog: this site's wording, links and connections. Copy to /etc/agent-console/catalog.json and edit. Every key is optional; the page has generic text for everything. Keep values out: name credentials, never paste them.",
+
+ "rc_name": "my-server",
+ "claude_model": "the CLI default model",
+ "agent_account": "my-agent-bot",
+ "infisical_project": "my-server",
+
+ "links": {
+  "infisical": ["Infisical", "https://infisical.example.com", "Edit a secret; the agent re-renders the .env within 60 s"],
+  "ntfy": ["ntfy", "https://ntfy.example.com", "Push topics"]
+ },
+
+ "conn_url": {
+  "ntfy": "https://ntfy.example.com",
+  "Infisical": "https://infisical.example.com"
+ },
+ "conn_hint": {
+  "ntfy": "Push notifications: one topic per agent, deny-all except the agent users."
+ },
+ "model_hint": {
+  "claude": "Claude Code CLI (claude -p) on your subscription, with the CLI's default model."
+ },
+ "item_model_hint": {
+  "job-bot": "Drafting and review on a large model, scoring on a small one."
+ },
+ "item_model_label": {
+  "job-bot": "Claude · large / small"
+ },
+
+ "project_conns": {
+  "my-project": ["GitHub", "Nextcloud"]
+ },
+ "project_conn_url": {
+  "my-project": {"Nextcloud": "https://cloud.example.com/apps/files/?dir=/projects/my-project"}
+ },
+
+ "conn_inf": {
+  "tg-bridge": [["agent-runner", "TELEGRAM_BOT_TOKEN"], ["agent-runner", "TELEGRAM_CHAT_ID"]]
+ },
+
+ "connections": [
+  {
+   "key": "tg-bridge",
+   "section": "Telegram bots",
+   "name": "Agent bridge bot",
+   "tags": ["Telegram"],
+   "users": ["bridge"],
+   "cred": "TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID",
+   "stored": "agent-runner .env (Infisical: /agent-runner)",
+   "expiry": "No expiry",
+   "rotate": "@BotFather → /revoke, then update the secret in Infisical",
+   "test": "Send test message",
+   "head": "Two-way phone channel for the agent loop.",
+   "how": ["Answers only your chat id.", "Reply to a blocked message to answer it."],
+   "links": [["BotFather", "https://t.me/BotFather", "Rename, edit commands or revoke a bot token"]]
+  },
+  {
+   "key": "gh-agent",
+   "section": "GitHub",
+   "name": "Agent token",
+   "tags": ["GitHub"],
+   "users": ["agent-runner", "overseer"],
+   "cred": "GH_TOKEN (fine-grained, repo scope)",
+   "stored": "agent-runner .env",
+   "expiry": "Check on GitHub",
+   "rotate": "GitHub → Settings → Developer settings → tokens",
+   "head": "The agents' GitHub identity: branches, PRs and comments.",
+   "links": [["GitHub tokens", "https://github.com/settings/tokens", "Tokens of the account you're signed in as"]]
+  }
+ ],
+
+ "roles": {
+  "arch": {"sub": "my-project only", "how": ["Only my-project's dispatcher has an architecture prompt."]}
+ },
+
+ "items": {
+  "overseer": {
+   "head": "Reviews every project once a day and posts a status report.",
+   "links": [["Status report", "https://github.com/my-user/ops/issues/1", "The overseer's issue"]]
+  },
+  "w-my-project": {
+   "extra_links": [["Project outputs", "https://cloud.example.com/apps/files/?dir=/projects/my-project", "Published files"]]
+  },
+  "sch-cron-nightly-backup": {
+   "name": "Nightly backup",
+   "head": "Backs up the project data and notifies on failure.",
+   "tags": {"cadence": ["sched", "nightly"], "conns": ["Nextcloud"]},
+   "cmds": [["Last run log", "tail -50 ~/nightly-backup.log"]]
+  }
+ }
+}

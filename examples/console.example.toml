@@ -1,0 +1,62 @@
+# Agent console site config. Copy to /etc/agent-console/console.toml and edit.
+# Every key is optional; the values shown are the defaults unless marked "example".
+# Keep it free of secret values: the console only ever needs paths and names.
+
+[site]
+name = "agents"                                 # shown in the page title
+timezone = "UTC"                                # the server's zone (IANA name), e.g. "Europe/Berlin"
+github_owner = ""                               # example: "your-github-user"; enables repo links
+catalog = "/etc/agent-console/catalog.json"     # descriptions, links and connections (see catalog.example.json)
+
+[paths]
+web = "/var/lib/agent-console/web"              # collector output: index.html, status.json, ledger.json
+install = "/opt/agent-console"                  # where agent-console.py, term.py and the compose file live
+
+[console]
+runner_sock = "/var/lib/agent-console/run/runner.sock"
+passkeys = "/var/lib/agent-console/state/passkeys.json"
+collector = "/opt/agent-console/agent-status.py"
+log = "/var/lib/agent-console/actions.log"
+password_file = "/etc/agent-console/password"
+
+[runner]
+dir = "/srv/agent-runner"                       # the agent loop's checkout on the host
+# projects = "/srv/agent-runner/projects"       # default: <dir>/projects
+container = "agent-runner"
+template = "agent-runner"                       # Infisical template name for the runner's .env
+ops_repo = "ops"                                # the project whose worker runs the overseer
+projects_fallback = []                          # project names to show when the supervisor can't be read
+app_decommissioned = []                         # projects whose app is retired but whose pipelines still run
+mode_command = "~/agents-mode"                  # host script that switches the backend mode
+# container_projects = "/app/projects"          # paths inside the runner container
+# container_supervisor = "/app/supervisor.py"
+
+[runner.activity]                               # example: work that runs without an agent session
+# my-project = [["nightly export", "out/export.log"]]
+
+[jobbot]
+container = "job-bot"
+env = "/srv/job-bot/.env"
+template = "job-bot"
+# run_window = ["06:45", "07:45"]               # block manual runs and restarts next to the scheduled run
+
+[claude]
+container = "claude-agent"
+chats = "~/.claude/projects/-workspace"         # the Claude container's transcripts (for chat titles)
+
+[infisical]
+templates = "/srv/infisical/templates"          # read for key names only, never values
+agent_yaml = "~/.config/infisical-agent/agent.yaml"
+unit = "infisical-agent"
+restart = ["sudo", "-n", "/usr/bin/systemctl", "restart", "infisical-agent"]
+show_values = []                                # extra setting names whose values may be shown
+
+[overwatch]
+tiers = []                                      # example: ["daily", "weekly"] for overwatch-daily.timer, …
+unit_prefix = "overwatch-"
+
+# Host cron jobs the console shows and can reschedule or pause (one table per job).
+# [cron.nightly-backup]
+# match = "nightly-backup.sh"                   # text that identifies the crontab line
+# project = "my-project"                        # optional: show it under this project
+# label = "nightly backup"

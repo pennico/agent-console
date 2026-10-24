@@ -1,0 +1,4 @@
+# Test and lint tools (CI installs exactly these).
+pytest==9.1.1
+ruff==0.17.2
+cryptography==43.0.3

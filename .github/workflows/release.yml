@@ -1,0 +1,40 @@
+name: Release
+
+# Push a tag like v0.1.0: the tree is scanned and tested, then a draft GitHub
+# Release is created with that version's CHANGELOG section and a source archive.
+# Publish the draft by hand once the version runs on a real server.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: No private patterns in the tree
+        env:
+          PRIVATE_PATTERNS: ${{ vars.PRIVATE_PATTERNS }}
+        run: scripts/scan-private.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install -r requirements-dev.txt && ruff check . && pytest -q
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "No CHANGELOG section for $VERSION" >&2; exit 1; }
+          git archive --format=tar.gz --prefix="agent-console-$VERSION/" -o "agent-console-$VERSION.tar.gz" "$TAG"
+          gh release create "$TAG" "agent-console-$VERSION.tar.gz" --draft --verify-tag \
+            --title "agent-console $VERSION" --notes-file notes.md

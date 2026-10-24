@@ -1,0 +1,24 @@
+[project]
+name = "agent-console"
+version = "0.1.0"
+description = "A private web console for the AI agents on a home server: status, schedules, connections and allow-listed actions."
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+passkeys = ["cryptography>=43"]
+test = ["pytest>=8", "cryptography>=43"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 160
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "S"]
+# E701/E702: one-line branches in the CBOR decoder; S603/S607: fixed argv lists, never a shell;
+# S108: test fixtures write to /tmp paths; S101: asserts in tests; S310: urlopen on loopback only.
+ignore = ["E701", "E702", "S603", "S607", "S108", "S101", "S310"]

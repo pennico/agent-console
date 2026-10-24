@@ -1,0 +1,8 @@
+# Site-specific config, catalog and install notes: never in the repository
+private/
+*.local.toml
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/

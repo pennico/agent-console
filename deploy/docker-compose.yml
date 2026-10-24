@@ -1,0 +1,42 @@
+# Web side of the agent console. Reach it only through Tailscale Serve (or another
+# authenticating proxy on your private network). It holds no privileges: what it
+# may change is decided by the host runner (agent-console-runner.service) behind
+# the mounted socket, and sudo changes go through the console terminal.
+# Paths and ids come from .env next to this file (see deploy/env.example).
+services:
+  agent-console:
+    build: .
+    image: agent-console:local
+    container_name: agent-console
+    restart: unless-stopped
+    user: "${CONSOLE_UID:-1000}:${CONSOLE_GID:-1000}"   # the runner's user, so it can use the owner-only runner socket
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    pids_limit: 64
+    ports:
+      - "127.0.0.1:${CONSOLE_PORT:-8097}:8097"
+    env_file:
+      - /etc/agent-console/env            # OWNER_LOGIN, CONSOLE_ORIGIN, CONSOLE_TERM_PUBLIC
+    environment:
+      CONSOLE_BIND: 0.0.0.0               # inside the container; the host publishes 127.0.0.1 only
+      CONSOLE_WEB: /data
+      CONSOLE_RUNNER_SOCK: /run/console/runner.sock
+      CONSOLE_PASSWORD_FILE: /secrets/password
+      CONSOLE_PASSKEYS: /state/passkeys.json
+      AGENT_CONSOLE_CONFIG: /config/console.toml
+    volumes:
+      - ${CONSOLE_WEB_DIR:-/var/lib/agent-console/web}:/data:ro       # page, status.json, ledger.json (collector output)
+      - ${CONSOLE_RUN_DIR:-/var/lib/agent-console/run}:/run/console   # runner socket
+      - ${CONSOLE_STATE_DIR:-/var/lib/agent-console/state}:/state     # passkey public keys (the only writable path)
+      - /etc/agent-console/password:/secrets/password:ro
+      - /etc/agent-console/console.toml:/config/console.toml:ro
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8097/status.json', timeout=3)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"   # local build: rebuild with docker compose up -d --build

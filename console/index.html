@@ -1,0 +1,1912 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agent Console</title>
+<style>
+/* Layout: sessions-style list on the left (collapsible groups by where each agent runs), detail pane on the right; one column with back button on phones. */
+:root {
+  --bg: #f4f5f2; --panel: #ffffff; --sunk: #eceee9; --fg: #1c221f; --muted: #5f6964; --line: #d8dcd5;
+  --sel: #e3ebe6; --accent: #2f6f5b; --accent-soft: #dcebe4;
+  --ok: #2f8a5f; --warn: #b7791f; --bad: #c2412d; --info: #3f6fa8; --idle: #8b938e;
+  --claude: #b4542f; --claude-soft: #f6e3da; --mistral: #8a5a00; --mistral-soft: #f5ead2;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #121614; --panel: #1a1f1c; --sunk: #222824; --fg: #e2e7e4; --muted: #98a29c; --line: #303833;
+  --sel: #26322c; --accent: #7cc4a9; --accent-soft: #23362f;
+  --ok: #5cc28f; --warn: #e0a84a; --bad: #ef7a64; --info: #7fa9e0; --idle: #7e8782;
+  --claude: #ec9672; --claude-soft: #3a2820; --mistral: #e2b45c; --mistral-soft: #362c18;
+  color-scheme: dark; } }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); }
+button { font: inherit; color: inherit; }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+
+.app { display: grid; grid-template-columns: minmax(290px, 360px) 1fr; grid-template-rows: auto auto 1fr; height: 100%;
+  padding-top: env(safe-area-inset-top, 0px); }
+header.top { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--line); background: var(--panel); }
+header.top h1 { font-size: 16px; margin: 0; font-weight: 650; }
+.counts { display: flex; gap: 6px; flex-wrap: wrap; }
+.pk-btn { font-weight: 600; border-color: var(--accent) !important; color: var(--accent); }
+/* Search */
+.search { position: relative; flex: 0 1 260px; min-width: 160px; }
+.search input { width: 100%; font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); color: var(--fg); }
+.search input:focus { outline: 2px solid var(--accent); outline-offset: 0; background: var(--panel); }
+.search-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 45; width: min(420px, calc(100vw - 32px)); max-height: 65vh; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgb(0 0 0 / 0.16); padding: 6px; }
+.sr-group { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 8px 6px 2px; }
+.pop-item.active { background: var(--sel); }
+.search-pop mark { background: color-mix(in srgb, var(--warn) 30%, transparent); color: inherit; border-radius: 2px; }
+@media (max-width: 760px) { .search { flex-basis: 100%; order: 5; } }
+/* Hover hints */
+.hint { position: fixed; z-index: 70; max-width: min(300px, calc(100vw - 16px)); padding: 7px 10px; border-radius: 8px; background: var(--fg); color: var(--bg);
+  font-size: 12.5px; line-height: 1.4; box-shadow: 0 6px 18px rgb(0 0 0 / 0.2); pointer-events: none; }
+[data-hint] { cursor: help; }
+a[data-hint], button [data-hint], .row [data-hint] { cursor: inherit; }
+/* Header counts: buttons that open a list of the matching items */
+.counts-wrap { position: relative; }
+.countbtn { border: 1px solid transparent; cursor: pointer; }
+.countbtn:hover, .countbtn[aria-expanded="true"] { border-color: var(--accent); }
+.countbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.count-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; width: min(380px, calc(100vw - 32px)); max-height: 60vh; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgb(0 0 0 / 0.16); padding: 6px; }
+.pop-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px 6px; font-size: 13px; }
+.pop-close { border: 0; background: none; cursor: pointer; color: var(--muted); padding: 2px 6px; border-radius: 6px; }
+.pop-close:hover { background: var(--sunk); }
+.pop-list { display: flex; flex-direction: column; }
+.pop-item { display: grid; grid-template-columns: 14px 1fr auto; gap: 1px 8px; align-items: center; width: 100%; text-align: left; border: 0; background: none;
+  border-radius: 6px; padding: 7px 6px; cursor: pointer; }
+.pop-item:hover, .pop-item:focus-visible { background: var(--sunk); outline: none; }
+.pop-name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pop-time { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pop-sub { grid-column: 2 / 4; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pop-empty { margin: 4px 6px 8px; font-size: 13px; color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* View tabs */
+.tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--sunk); border-radius: 10px; }
+.tab { border: 0; background: none; border-radius: 7px; padding: 5px 12px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.tab:hover { color: var(--fg); }
+.tab[aria-selected="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.14); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.unlocked { color: var(--accent); font-weight: 600; }
+.key-msg { color: var(--bad); }
+.goto { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 2px 10px; font-size: 12.5px; cursor: pointer; }
+.goto:hover { border-color: var(--accent); color: var(--accent); }
+.goto:focus-visible { outline: 2px solid var(--accent); }
+/* Agents sub-modes */
+.subnav { position: sticky; top: 0; z-index: 2; display: flex; gap: 2px; margin: 10px 16px 4px; padding: 3px; background: var(--sunk); border-radius: 9px; }
+.subtab { flex: 1; border: 0; background: none; border-radius: 6px; padding: 5px 8px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.subtab[aria-selected="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.14); }
+.subtab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.role { font: inherit; color: inherit; text-align: left; cursor: pointer; }
+button.role:hover { border-color: var(--accent); }
+button.role:focus-visible { outline: 2px solid var(--accent); }
+/* Projects × roles grid: sequential single-hue heat by sessions this week */
+.rg { border-collapse: separate; border-spacing: 3px; font-variant-numeric: tabular-nums; min-width: 640px; }
+.rg th { font-weight: 500; font-size: 12px; color: var(--muted); padding: 2px 6px; border: 0; text-align: left; vertical-align: bottom; }
+.rg thead th { white-space: nowrap; }
+.rg thead th .pill { margin-top: 3px; display: inline-flex; }
+.rg td { padding: 0; border: 0; text-align: center; }
+.rg-head { border: 0; background: none; font: inherit; font-weight: 600; color: var(--fg); padding: 0; cursor: pointer; display: block; }
+.rg-head:hover { color: var(--accent); }
+.rg-cell { position: relative; width: 100%; min-width: 84px; min-height: 40px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+  font: inherit; color: var(--fg); cursor: pointer; display: inline-flex; align-items: baseline; justify-content: center; gap: 4px; padding: 8px 6px; }
+.rg-cell b, .rg-total b { font-size: 15px; }
+.rg-cell small, .rg-total small { font-size: 11px; color: var(--muted); }
+.rg-cell.h1, .lg-heat.h1 { background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
+.rg-cell.h2, .lg-heat.h2 { background: color-mix(in srgb, var(--accent) 28%, var(--panel)); }
+.rg-cell.h3, .lg-heat.h3 { background: color-mix(in srgb, var(--accent) 44%, var(--panel)); }
+.rg-cell:hover { border-color: var(--accent); }
+.rg-cell.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rg-cell:focus-visible { outline: 2px solid var(--fg); }
+.rg-none { color: var(--muted); font-size: 13px; }
+.rg-total td { padding: 6px; font-size: 13px; }
+.rg-total th { color: var(--fg); font-weight: 600; }
+.rg-cost { display: block; font-size: 11px; color: var(--muted); }
+.rg-run, .rg-fail { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; }
+.tl-legend .rg-run, .tl-legend .rg-fail { position: static; }
+.rg-run { background: var(--ok); }
+.rg-fail { background: var(--bad); }
+.rg-cell .rg-run + .rg-fail { right: 15px; }
+.lg-heat { width: 14px; height: 12px; border-radius: 3px; border: 1px solid var(--line); background: var(--panel); }
+/* Infisical key chips */
+.keyrow { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.lab2 { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); width: 70px; }
+.keychip { display: inline-flex; align-items: center; gap: 5px; font: 11.5px var(--mono); padding: 2px 7px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel); color: var(--fg); cursor: copy; }
+.keychip .dot { width: 7px; height: 7px; }
+.keychip.plain { background: var(--sunk); }
+.keychip b { font-weight: 500; color: var(--muted); }
+.keychip:hover { border-color: var(--accent); }
+.keychip.copied { border-color: var(--ok); color: var(--ok); }
+.inf-block { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; border-top: 1px solid var(--line); }
+.inf-block:first-of-type { border-top: 0; }
+/* Schedules timeline */
+.viewtop { grid-column: 1 / -1; grid-row: 2; background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); max-height: 46vh; overflow: auto; }
+.viewtop > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 10px 0 6px; }
+.viewtop > summary::-webkit-details-marker { display: none; }
+.viewtop > summary::before { content: ""; border-left: 5px solid var(--muted); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform 0.15s; }
+.viewtop[open] > summary::before { transform: rotate(90deg); }
+.tl-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.tl-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.tl-legend i { display: inline-block; }
+.lg-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.lg-dot.hollow { background: var(--panel); border: 2px solid var(--accent); box-sizing: border-box; }
+.lg-bar { width: 18px; height: 6px; border-radius: 3px; background: var(--accent-soft); border: 1px solid var(--accent); box-sizing: border-box; }
+.lg-int { width: 18px; border-top: 2px dashed var(--accent); }
+.lg-now { width: 0; height: 12px; border-left: 2px dashed var(--warn); }
+.tl-scroll { position: relative; overflow-x: auto; }
+#tl-svg svg { display: block; }
+.tl-grid { stroke: var(--line); stroke-width: 1; }
+.tl-day { fill: var(--muted); font: 11px var(--mono); }
+.tl-name { fill: var(--fg); font: 12.5px var(--sans); }
+.tl-side { fill: var(--muted); font: 11px var(--sans); }
+.tl-hit { fill: transparent; }
+.tl-row { cursor: pointer; outline: none; }
+.tl-row:hover .tl-hit, .tl-row:focus-visible .tl-hit { fill: var(--sunk); }
+.tl-row.sel .tl-hit { fill: var(--sel); }
+.tl-row:focus-visible .tl-hit { stroke: var(--accent); stroke-width: 2; }
+.tl-row.off .tl-name { fill: var(--muted); }
+.tl-bar { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
+.tl-int { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 4; }
+.tl-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.tl-dot.maybe { fill: var(--panel); stroke: var(--accent); stroke-width: 2; }
+.tl-dot.past { opacity: 0.4; }
+.tl-hot { fill: transparent; }
+.tl-hot:hover + * { opacity: 1; }
+.tl-now { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.tl-nowl { fill: var(--warn); font: 600 10.5px var(--sans); }
+.tl-tip { position: absolute; transform: translate(-50%, -100%); pointer-events: none; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 9px; box-shadow: 0 6px 18px rgb(0 0 0 / 0.16); display: flex; flex-direction: column; gap: 1px; white-space: nowrap; z-index: 5; }
+.tl-tip b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.tl-tip span { font-size: 12px; color: var(--muted); }
+.tl-note { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .viewtop > summary::before { transition: none; } }
+.updated { margin-left: auto; color: var(--muted); font-size: 12.5px; }
+.updated.stale { color: var(--bad); font-weight: 600; }
+
+/* Sidebar groups */
+aside { grid-row: 3; border-right: 1px solid var(--line); overflow-y: auto; background: var(--panel); min-height: 0; padding-bottom: 12px; }
+details.group { border-bottom: 1px solid var(--line); }
+details.group > summary, details.subgroup > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+details.group > summary::-webkit-details-marker, details.subgroup > summary::-webkit-details-marker { display: none; }
+details.group > summary { padding: 12px 16px 8px; }
+details.group > summary::before, details.subgroup > summary::before { content: ""; width: 0; height: 0; border-left: 5px solid var(--muted);
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform 0.15s; flex: none; }
+details[open] > summary::before { transform: rotate(90deg); }
+details.group > summary:hover, details.subgroup > summary:hover { background: var(--sunk); }
+summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.g-name { font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.07em; }
+.g-kind { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+.g-count { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+details.subgroup > summary { padding: 6px 16px 6px 28px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+details.subgroup .row { padding-left: 42px; }
+
+.row { display: grid; grid-template-columns: 14px 1fr auto; gap: 2px 10px; align-items: center; width: 100%;
+  text-align: left; border: 0; background: none; padding: 8px 16px; cursor: pointer; }
+.row:hover { background: var(--sunk); }
+.row[aria-selected="true"] { background: var(--sel); }
+.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.row .name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.row .time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.row .sub { grid-column: 2 / 4; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.row .tags { grid-column: 2 / 4; margin-top: 3px; }
+.row.child { padding-left: 28px; }
+
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--idle); justify-self: center; flex: none; }
+.s-running .dot, .dot.s-running { background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 2s infinite; }
+.s-up .dot, .dot.s-up { background: var(--ok); }
+/* Lifecycle: done = idle but armed, off = on the server but stopped, history = removed */
+.s-done .dot, .dot.s-done { background: var(--idle); }
+.s-off .dot, .dot.s-off { background: transparent; border: 1.5px solid var(--idle); }
+.s-history .dot, .dot.s-history { background: transparent; border: 1.5px dashed var(--idle); }
+.row.s-history { opacity: 0.6; }
+.row.s-history .name { font-weight: 450; }
+.p-new { color: var(--info); background: color-mix(in srgb, var(--info) 14%, var(--panel)); }
+.s-blocked .dot, .dot.s-blocked, .s-paused .dot, .dot.s-paused, .s-attention .dot, .dot.s-attention { background: var(--warn); }
+.s-down .dot, .dot.s-down, .s-failed .dot, .dot.s-failed { background: var(--bad); }
+.s-dormant .dot, .dot.s-dormant { background: transparent; border: 1.5px solid var(--idle); }
+.s-unknown .dot, .dot.s-unknown { background: transparent; border: 1.5px dashed var(--idle); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } details > summary::before { transition: none; } }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px;
+  font-size: 12px; font-weight: 550; background: var(--sunk); white-space: nowrap; }
+.chip .dot { width: 7px; height: 7px; }
+
+/* Tags: round pills for cadence and model, square outlined chips for connections */
+.tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.p-on { color: var(--accent); background: var(--accent-soft); }
+.p-sched { color: var(--fg); background: var(--sunk); }
+.p-off { color: var(--muted); background: var(--sunk); }
+.p-sched::before, .p-off::before { background: var(--muted); }
+.p-claude { color: var(--claude); background: var(--claude-soft); }
+.p-mistral { color: var(--mistral); background: var(--mistral-soft); }
+.c { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 11px; padding: 0 6px;
+  border: 1px solid var(--line); border-radius: 3px; color: var(--fg); background: var(--panel); white-space: nowrap; }
+.c::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: var(--muted); }
+.c-local::before { background: transparent; border: 1px solid var(--muted); }
+.row .pill, .row .c { font-size: 10.5px; }
+
+.legend { padding: 12px 16px 4px; display: flex; flex-direction: column; gap: 8px; }
+.legend .lab { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.legend .tags { align-items: center; }
+.legend .live { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); margin-right: 6px; }
+
+main { grid-row: 3; overflow-y: auto; min-height: 0; padding: 22px max(16px, env(safe-area-inset-right, 0px)) 40px 28px; }
+.detail { max-width: 760px; display: flex; flex-direction: column; gap: 20px; }
+.detail-head { display: flex; flex-direction: column; gap: 8px; }
+.detail-head .where { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.detail-head h2 { margin: 0; font-size: 22px; font-weight: 650; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.detail-head p { margin: 0; color: var(--muted); max-width: 65ch; }
+.back { display: none; align-self: flex-start; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.fact { background: var(--panel); padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fact span { font-size: 11.5px; color: var(--muted); }
+.fact b { font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+.roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+.role { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; background: var(--panel); min-width: 0; }
+.role b { font-size: 13px; }
+.role .code { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.role p { margin: 0; font-size: 12.5px; color: var(--muted); }
+
+h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 4px 8px 6px 0; border-bottom: 1px solid var(--line); }
+td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); }
+.tablewrap { overflow-x: auto; }
+.ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); } .muted { color: var(--muted); }
+
+.cmds { display: flex; flex-direction: column; gap: 6px; }
+.cmd { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; background: var(--sunk);
+  border-radius: 8px; padding: 8px 10px; }
+.cmd .what { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.cmd code { overflow-x: auto; white-space: nowrap; min-width: 0; }
+.cmd button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
+.cmd button:focus-visible, .back:focus-visible { outline: 2px solid var(--accent); }
+.note { font-size: 12.5px; color: var(--muted); }
+
+.acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.act { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-weight: 550; }
+.act:hover:not(:disabled) { border-color: var(--accent); }
+.act.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+.act.danger { color: var(--bad); }
+.act.current { background: var(--sel); border-color: var(--accent); cursor: default; }
+.act.armed { background: var(--bad); border-color: var(--bad); color: var(--panel); }
+.act:disabled { opacity: 0.5; cursor: not-allowed; }
+.act.current:disabled { opacity: 1; }
+.act.soon { border-style: dashed; }
+.act:focus-visible, .keybar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.act-note { font-size: 12.5px; color: var(--muted); margin: 0; }
+.result { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--sunk); }
+.result.err { color: var(--bad); }
+.keybar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; }
+.keybar input { font: inherit; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); width: 14em; max-width: 100%; }
+.keybar button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.box { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+.box h3 { margin: 0; }
+.sched-now { font-size: 15px; font-weight: 600; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.sched-src { font-family: var(--mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.sched-extra { margin: 0; padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.inline-edit { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.inline-edit input, .inline-edit select { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); max-width: 100%; }
+.inline-edit input[type="text"] { width: 19em; font-family: var(--mono); font-size: 12.5px; }
+.inline-edit label { font-size: 12.5px; color: var(--muted); }
+.how ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; max-width: 70ch; }
+.how code { font-size: 12px; background: var(--sunk); padding: 0 4px; border-radius: 4px; }
+a.c { text-decoration: none; }
+a.c:hover { border-color: var(--accent); }
+.links { display: flex; flex-wrap: wrap; gap: 8px; }
+.links a { color: var(--accent); }
+.linklist { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; }
+.linklist a { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--fg); background: var(--panel); min-width: 0; }
+.linklist a:hover { border-color: var(--accent); }
+.linklist a b { font-weight: 600; font-size: 13px; color: var(--accent); }
+.linklist a span { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.act.link { text-decoration: none; color: var(--accent); display: inline-flex; align-items: center; }
+.empty { color: var(--muted); padding: 40px 0; }
+
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; }
+  aside { border-right: 0; }
+  main { padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+  .app.show-detail aside, .app.show-detail .viewtop { display: none; }
+  .app:not(.show-detail) main { display: none; }
+  .back { display: inline-block; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <h1 class="sr-only">Agent console</h1>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Console views"></nav>
+    <div class="search"><input id="search" type="search" placeholder="Search  /" aria-label="Search agents, roles, schedules, connections and Infisical keys" autocomplete="off" spellcheck="false"><div class="search-pop" id="search-pop" role="listbox" aria-label="Search results" hidden></div></div>
+    <div class="counts-wrap"><div class="counts" id="counts"></div><div class="count-pop" id="count-pop" role="dialog" aria-label="Running and needing a look" hidden></div></div>
+    <span class="updated" id="updated">loading…</span>
+    <div class="keybar" id="keybar" hidden></div>
+  </header>
+  <details class="viewtop" id="viewtop" data-group="chart" open hidden>
+    <summary><span class="g-name">Next 7 days</span>
+      <span class="tl-legend"><span><i class="lg-dot"></i>run</span><span><i class="lg-dot hollow"></i>only if armed / earliest</span><span><i class="lg-bar"></i>always on</span><span><i class="lg-int"></i>every few minutes</span><span><i class="lg-now"></i>now</span></span></summary>
+    <div class="tl-scroll" id="tl-scroll"><div id="tl-svg"></div><div class="tl-tip" id="tl-tip" hidden></div></div>
+    <p class="tl-note">Click a row to open it below. Times are in your browser's time zone; GitHub schedules run on UTC.</p>
+  </details>
+  <details class="viewtop" id="rolegrid" data-group="grid" open hidden>
+    <summary><span class="g-name">Projects × roles</span>
+      <span class="tl-legend"><span>Sessions in the last 7 days / total:</span><span><i class="lg-heat h0"></i>0</span><span><i class="lg-heat h1"></i>1–2</span><span><i class="lg-heat h2"></i>3–5</span><span><i class="lg-heat h3"></i>6+</span><span><i class="rg-run"></i>running</span><span><i class="rg-fail"></i>failed this week</span></span></summary>
+    <div class="tl-scroll"><div id="rg-table"></div><div class="tl-tip" hidden></div></div>
+    <p class="tl-note">Click a cell or a role name for its settings and sessions, a project name for the project. Telegram chat isn't in the grid: its sessions aren't logged yet.</p>
+  </details>
+  <aside id="list" aria-label="Agents"></aside>
+  <div class="hint" id="hint" role="tooltip" hidden></div>
+  <main id="main"><div class="empty">Loading status…</div></main>
+</div>
+
+<script>
+"use strict";
+const POLL_MS = 30000, STALE_S = 300, DAY = 86400000;
+const HOST = location.hostname;   // the console is served from the server itself; internal links reuse its name
+// Console views (tabs). Item ids carry their view: sch-… schedules, cn-… connections, the rest agents.
+const VIEWS = [{id: "agents", label: "Agents"}, {id: "schedules", label: "Schedules"}, {id: "connections", label: "Connections"}];
+const VIEW_OF = id => id.startsWith("sch-") ? "schedules" : id.startsWith("cn-") ? "connections" : "agents";
+// Per-viewer conveniences only; every read falls back to a default when storage is blocked or holds an old format.
+function load_(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null || typeof v !== typeof d ? d : v; } catch (e) { return d; } }
+function save_(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+let data = null, items = [], agentItems = [], inputVals = {};
+let sel = load_("agent-console-sel", {}), view = load_("agent-console-view", "agents"), openState = load_("agent-console-open", {});
+// Agents view has two modes: "location" (where agents run) and "roles" (role templates + project × role grid).
+let agentsMode = load_("agent-console-agents-mode", "location");
+if (!["location", "roles"].includes(agentsMode)) agentsMode = "location";
+const MODE_OF = id => id.startsWith("role-") ? "roles" : "location";
+const SK = () => view === "agents" ? "agents:" + agentsMode : view;   // selection is remembered per view and mode
+let api = null, session = "", sessionUntil = 0, unlockMsg = "", busy = false, result = null, armed = null;
+const saved = load_("agent-console-session", {});
+if (saved.token && saved.until * 1000 > Date.now()) { session = saved.token; sessionUntil = saved.until; }
+if (!VIEWS.some(v => v.id === view)) view = "agents";
+if (location.hash.length > 1) {
+  const h = decodeURIComponent(location.hash.slice(1));
+  view = VIEW_OF(h);
+  if (view === "agents") agentsMode = MODE_OF(h);
+  sel[SK()] = h;
+}
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function ago(t) {
+  if (!t) return "—";
+  const s = Date.now() / 1000 - t, a = Math.abs(s);
+  const v = a < 60 ? "now" : a < 3600 ? Math.round(a / 60) + "m" : a < 86400 ? Math.round(a / 3600) + "h" : Math.round(a / 86400) + "d";
+  return v === "now" ? v : s < 0 ? "in " + v : v + " ago";
+}
+const when = t => t ? new Date(t * 1000).toLocaleString([], {weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}) : "—";
+const dur = (a, b) => { if (!a || !b) return "—"; const m = Math.round((b - a) / 60); return m < 60 ? m + " min" : (m / 60).toFixed(1) + " h"; };
+const usd = v => v == null ? "—" : "$" + v.toFixed(2);
+const fact = (k, v) => `<div class="fact"><span>${esc(k)}</span><b>${v}</b></div>`;
+const cmd = (what, c) => `<div class="cmd"><span class="what">${esc(what)}</span><code>${esc(c)}</code><button type="button" data-copy="${esc(c)}">Copy</button></div>`;
+const hintAttr = h => h ? ` data-hint="${esc(h)}"` : "";
+const chip = (status, label) => `<span class="chip"${hintAttr(STATUS_HINT[status])}><span class="dot s-${status}"></span>${esc(label ?? status)}</span>`;
+const ROLE = {impl: "implement", qa: "correctness review", adv: "adversarial review", verify: "verify merge", rework: "rework", overseer: "overseer"};
+const ATTN = ["blocked", "paused", "attention", "failed", "down"];
+
+// ---- this site: names and paths from the collector's config, descriptions from the private catalog ----
+// The code only carries generic text; everything specific to one installation comes from status.json.
+const SITE = () => (data && data.site) || {};
+const CAT = () => SITE().catalog || {};
+const CT = () => Object.assign({runner: "agent-runner", jobbot: "job-bot", claude: "claude-agent"}, SITE().containers || {});
+const OPS = () => SITE().ops_repo || "ops";
+const SECTION_KIND = () => ({[CT().runner]: "container", [CT().jobbot]: "container", [CT().claude]: "container", "Overwatch": "host timers"});
+
+// ---- links ----
+const gh = (repo, path = "") => SITE().github_owner ? `https://github.com/${SITE().github_owner}/${repo}${path}` : null;
+const BASE_LINKS = {
+  claudeUsage: ["Claude plan usage", "https://claude.ai/settings/usage", "Limits shared with your own chats"],
+  claudeCode: ["Claude Code sessions", "https://claude.ai/code", "Remote Control and cloud sessions"],
+  mistral: ["Mistral usage", "https://console.mistral.ai/usage", "Pay-per-token spend"],
+  botfather: ["BotFather", "https://t.me/BotFather", "Rename, edit commands or revoke a bot token"],
+  ccDocs: ["Claude Code on the web docs", "https://code.claude.com/docs/en/claude-code-on-the-web", "How sessions and environments work"],
+};
+const Lk = key => (CAT().links || {})[key] || BASE_LINKS[key] || null;
+const linksHtml = list => (list = (list || []).filter(x => x && x[1])).length ? `<div><h3>Links</h3><div class="linklist">${list.map(([t, u, d]) =>
+  `<a href="${esc(u)}" target="_blank" rel="noopener"><b>${esc(t)} ↗</b><span>${esc(d || u)}</span></a>`).join("")}</div></div>` : "";
+
+// ---- tags: cadence + model pills, connection chips ----
+const MODEL = {claude: "Claude", mistral: "Mistral"};
+// the agent loop's `both` mode: who runs which role
+const BOTH_ROLES = {impl: "mistral", arch: "mistral", qa: "mistral", adv: "claude", verify: "claude", overseer: "claude", chat: "mistral"};
+const projectConns = repo => (CAT().project_conns || {})[repo] || ["GitHub"];
+const connUrl = name => Object.assign({"GitHub": SITE().github_owner ? "https://github.com/" + SITE().github_owner : null, "claude.ai": "https://claude.ai/code",
+  "Telegram": "https://t.me/BotFather"}, CAT().conn_url || {})[name];
+const LOCAL = new Set(["agent-memory", "local only"]);
+const ROLES = [["Implement", "impl · arch", "Builds the item on a branch and opens a PR.", "impl"],
+  ["Correctness review", "qa", "Checks the PR against the item and tests.", "qa"],
+  ["Adversarial review", "adv", "Tries to break the PR before merge.", "adv"],
+  ["Rework", "impl on the PR", "Fixes a failed review; 2 failed rounds → blocker.", "impl"],
+  ["Delivery check", "verify", "Confirms the merged change does what was asked.", "verify"]];
+const pill = (cls, label, hint) => `<span class="pill p-${cls}"${hintAttr(hint === undefined ? pillHint(cls, label) : hint)}>${esc(label)}</span>`;
+const conn = (name, url, hint) => url && !LOCAL.has(name)
+  ? `<a class="c" href="${esc(url)}" target="_blank" rel="noopener"${hintAttr(hint || connHint(name))}>${esc(name)}</a>`
+  : `<span class="c${LOCAL.has(name) ? " c-local" : ""}"${hintAttr(hint || connHint(name))}>${esc(name)}</span>`;
+function roleModel(role, backend) {
+  return backend === "claude" ? "claude" : backend === "vibe" ? "mistral" : backend === "both" ? BOTH_ROLES[role] : null;
+}
+function modelTags(backend, roles) {
+  const set = new Set(roles.map(r => roleModel(r, backend)).filter(Boolean));
+  return set.size ? [...set].map(m => [m, MODEL[m]]) : [["claude", "Claude"], ["mistral", "Mistral"]];
+}
+const inherit = cs => cs === "off" ? "off" : "unknown";   // a child of a stopped container is off too
+function tagsHtml(t, linked, isNew) {
+  if (!t) return isNew ? `<div class="tags">${pill("new", "new")}</div>` : "";
+  const url = n => linked ? ((t.connUrl || {})[n] || connUrl(n)) : null;
+  return `<div class="tags">${isNew ? pill("new", "new") : ""}${(t.extra || []).map(x => pill(x[0], x[1])).join("")}${t.cadence ? pill(t.cadence[0], t.cadence[1]) : ""}${(t.models || []).map(m => pill(m[0], m[1], m[2])).join("")}${(t.conns || []).map(n => conn(n, url(n), (t.connHint || {})[n])).join("")}</div>`;
+}
+function rolesHtml(backend) {
+  return `<div><h3>Roles${backend ? " · " + esc(backend) + " mode" : ""}</h3><div class="roles">` + ROLES.map(([n, code, d, r]) => {
+    const m = modelFor(r, backend);
+    return `<button type="button" class="role" data-goto="role-${r}"><b>${esc(n)}</b><span class="code">${esc(code)}</span><p>${esc(d)}</p><div class="tags">${m ? pill(m, MODEL[m]) : pill("claude", "Claude") + pill("mistral", "Mistral")}</div></button>`;
+  }).join("") + `</div></div>`;
+}
+const howHtml = how => how && how.length ? `<div class="how"><h3>How it works</h3><ul>${how.map(h => `<li>${h}</li>`).join("")}</ul></div>` : "";
+
+// ---- schedules ----
+const pad = n => String(n).padStart(2, "0");
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function cronHuman(expr, tz) {
+  const f = (expr || "").split(/\s+/);
+  if (f.length !== 5 || !/^\d+$/.test(f[0]) || !/^\d+$/.test(f[1])) return expr;
+  const t = pad(f[1]) + ":" + pad(f[0]) + (tz ? " " + tz : "");
+  if (f[2] === "*" && f[3] === "*" && f[4] === "*") return "Daily at " + t;
+  if (/^\d+$/.test(f[2]) && f[3] === "*" && f[4] === "*") return "Monthly on day " + f[2] + " at " + t;
+  if (f[2] === "*" && f[3] === "*" && /^\d$/.test(f[4])) return "Every " + DOW[+f[4]] + " at " + t;
+  return expr + (tz ? " (" + tz + ")" : "");
+}
+function intervalHuman(s) {
+  if (!s) return "Off";
+  return s % 3600 === 0 ? (s === 3600 ? "Every hour" : "Every " + s / 3600 + " hours") : "Every " + Math.round(s / 60) + " minutes";
+}
+function containerCtrl(name, c, note) {
+  const running = c && c.state === "running";
+  return running
+    ? {label: "Stop " + name, action: "stop", target: name, danger: true, note}
+    : {label: "Start " + name, action: "start", target: name, primary: true};
+}
+
+function containerStatus(c) {
+  if (!c || c.state === "unknown") return "unknown";
+  if (c.state === "restarting" || c.state === "dead") return "down";
+  if (c.state !== "running") return "off";   // stopped on purpose: restart: unless-stopped brings a crash back
+  if (c.health === "unhealthy" || c.oom) return "attention";
+  return "up";
+}
+function containerFacts(c) {
+  return fact("Container", esc(c.state) + (c.health ? " · " + esc(c.health) : "")) +
+    fact("Up since", esc(when(c.started))) + fact("Restarts", c.restarts ?? "—") +
+    (c.oom ? fact("Memory", '<span class="bad">OOM-killed</span>') : "");
+}
+function sessionsTable(rows) {
+  if (!rows || !rows.length) return '<p class="note">No sessions in the logs.</p>';
+  return `<div class="tablewrap"><table><thead><tr><th>Started</th><th>Role</th><th>Backend</th><th>Took</th><th>Result</th><th>Cost</th></tr></thead><tbody>` +
+    rows.map(s => `<tr><td>${esc(when(s.start))}</td><td>${esc(ROLE[s.role] || s.role)}</td><td>${esc(s.backend)}</td>` +
+      `<td>${s.running ? (s.stale ? '<span class="warn">no exit file</span>' : '<span class="ok">running</span>') : dur(s.start, s.end)}</td>` +
+      `<td>${s.running ? "—" : s.exit === 0 ? '<span class="ok">ok</span>' : `<span class="bad">exit ${esc(s.exit)}</span>`}</td><td>${usd(s.cost)}</td></tr>`).join("") +
+    `</tbody></table></div>`;
+}
+
+function build(d) {
+  const out = [];
+  const ar = d.agent_runner, cs = containerStatus(ar.container), be = ar.backend, R = CT().runner, J = CT().jobbot, C = CT().claude;
+  const P = (SITE().paths || {}).projects || "projects";
+  const NO_TICK = "The 5-minute tick is a constant in the supervisor; making it adjustable is a change in the agent loop.";
+  const arStop = containerCtrl(R, ar.container, "Stopping halts every worker, the overseer, the Telegram bridge and agent-memory until you start it again.");
+  out.push({id: "agent-runner", lid: "container:" + R, section: R, name: R, status: cs,
+    sub: (be ? "backend " + be : "backend ?") + " · " + (ar.budget_today ?? 0) + " sessions today",
+    time: ar.container.started, where: "container · " + R,
+    head: "Supervisor for the project workers, the overseer, the Telegram bridge and agent-memory.",
+    tags: {cadence: ["on", "always on"], models: modelTags(be, ["impl", "qa", "adv", "verify", "overseer", "chat"]), conns: ["GitHub", "ntfy", "agent-memory"],
+      connUrl: {"GitHub": gh(OPS())}},
+    schedule: {now: "Always on", state: cs === "up" ? "on" : "off", src: "restart: unless-stopped · the supervisor starts workers every 5 min, the overseer at most once a day",
+      ctrls: [arStop, {label: "Change tick interval", soon: NO_TICK}]},
+    body: `<div class="facts">${containerFacts(ar.container)}${fact("Backend mode", esc(be || "not readable"))}${fact("Sessions today (shared budget)", ar.budget_today ?? 0)}${fact("Cost today", usd(ar.workers.reduce((a, w) => a + (w.cost_today || 0), 0)))}</div>${rolesHtml(be)}`,
+    acts: [{label: "Restart " + R, action: "restart", target: R, danger: true, note: "Running sessions stop gently and resume on the next tick."},
+      ...["claude", "vibe", "both"].map(m => ({label: "Backend: " + m, action: "backend", target: m, current: be === m, note: "Switching the backend recreates " + R + "."}))],
+    links: [[OPS() + " on GitHub", gh(OPS()), "The agent loop"], Lk("claudeUsage"), Lk("mistral")],
+    cmds: [["Follow the supervisor log", `docker logs -f --tail 100 ${R}`], ["Restart all workers", `docker restart ${R}`]]});
+
+  for (const w of ar.workers) {
+    let status = cs === "up" || cs === "attention" ? w.status : inherit(cs);
+    const last = w.recent[0], act = w.activity;
+    const recentAct = act && Date.now() / 1000 - act.at < 26 * 3600 && (!last || act.at > (last.end || last.start));
+    if ((status === "done" || status === "idle") && recentAct) status = "up";   // active through run jobs without an agent session
+    const sub = w.started === false ? "not started by the supervisor"
+      : w.owner_paused ? "paused by you " + ago(w.paused_since)
+      : w.current ? (ROLE[w.current.role] || w.current.role) + " since " + ago(w.current.start)
+      : w.blockers.length ? "waiting on blocker #" + w.blockers.join(", #")
+      : w.pause_until ? "quota pause until " + when(w.pause_until)
+      : recentAct ? act.label + " ran " + ago(act.at) + " (no agent session)"
+      : w.status === "done" ? "idle · roadmap done, waiting for tasks"
+      : last ? "last: " + (ROLE[last.role] || last.role) + (last.exit === 0 ? "" : " (exit " + last.exit + ")") : "no sessions yet";
+    const repoUrl = gh(w.repo);
+    const pauseCtrl = w.owner_paused || w.started === false
+      ? {label: "Resume worker", action: "resume", target: w.repo, primary: true, note: "The supervisor restarts it within a minute."}
+      : {label: "Pause worker", action: "pause", target: w.repo, danger: true, note: "Ends the current loop gently (work in progress is stashed) and keeps the worker stopped until you resume it. A paused project also runs no run jobs."};
+    const extra = [], ctrls = [pauseCtrl, {label: "Change tick interval", soon: NO_TICK}], links = [];
+    for (const wf of (ar.workflows || []).filter(x => x.repo === w.repo)) {
+      extra.push(`<b>${esc(wf.name)}</b>: ${esc(wf.crons.map(c => cronHuman(c, "UTC")).join(", "))} · GitHub Actions files a <code>run</code> issue` +
+        (wf.gate_var ? `; fires only while the repository variable <code>${esc(wf.gate_var)}</code> is <code>enabled</code>` : ""));
+      ctrls.push({label: wf.name + ": disable or edit on GitHub", link: gh(w.repo, "/actions/workflows/" + wf.file)});
+      links.push([wf.name + " workflow", gh(w.repo, "/actions/workflows/" + wf.file), "Runs, Disable workflow, Run workflow"]);
+    }
+    if ((ar.workflows || []).some(x => x.repo === w.repo && x.gate_var))
+      links.push(["Repository variables", gh(w.repo, "/settings/variables/actions"), "Arm or disarm the gated jobs"]);
+    for (const [job, c] of Object.entries(ar.cron || {}).filter(([, c]) => c.project === w.repo)) {
+      const label = c.label || job;
+      extra.push(`<b>${esc(label)}</b>: ${esc(cronHuman(c.schedule))} · host cron${c.enabled ? "" : ' · <span class="warn">stopped</span>'}`);
+      ctrls.push({label: label + " schedule", action: "cron", target: job, input: {type: "text", value: c.schedule, placeholder: "0 4 1 * *"}, note: "Cron format: minute hour day-of-month month day-of-week, server time."});
+      ctrls.push(c.enabled ? {label: "Stop " + label, action: "cron", target: job, value: "off", danger: true}
+                           : {label: "Resume " + label, action: "cron", target: job, value: "on", primary: true});
+    }
+    out.push({id: "w-" + w.repo, lid: "project:" + w.repo, section: R, child: true, name: w.repo, status, sub,
+      time: w.current ? w.current.start : last && (last.end || last.start), where: R + " · worker",
+      head: w.started === false ? "The project is on disk but not in the supervisor's list, so no worker runs for it."
+        : w.owner_paused ? "Paused by you: the supervisor ended its loop and won't restart it until you resume. It runs no sessions and no run jobs."
+        : {up: "Active: " + (act ? act.label : "a run job") + " ran in the last day without an agent session. The worker also checks for tasks every 5 minutes.",
+           running: "A session is running now.", blocked: "Waiting for your answer on a blocker issue. Comment there and add the answered label.", paused: "Paused after hitting the API quota.", done: "Roadmap finished. The worker still checks GitHub every 5 minutes and starts on any new task issue.", idle: "Idle. Checks for work every 5 minutes.", off: R + " is stopped.", unknown: "Container status unknown."}[status] || "",
+      tags: {extra: w.app_decommissioned ? [["off", "app decommissioned"]] : [], cadence: status === "off" ? ["off", w.owner_paused ? "paused" : "off"] : ["on", "5-min ticks"], models: modelTags(be, ["impl", "qa", "adv", "verify"]), conns: [...projectConns(w.repo), "ntfy", "agent-memory"],
+        connUrl: Object.assign({"GitHub": repoUrl}, (CAT().project_conn_url || {})[w.repo] || {}),
+        connHint: {"GitHub": (SITE().github_owner ? SITE().github_owner + "/" : "") + w.repo + ": task issues start work here; the worker opens PRs and comments" + (CAT().agent_account ? " as " + CAT().agent_account : "") + ". Click (in the detail) to open the repo."}},
+      schedule: {now: "Every 5 minutes", state: status === "off" ? "off" : "on", src: "supervisor restart delay (5 min) · sessions run back to back while there is work", extra, ctrls},
+      body: `<div class="facts">${fact("Status", chip(status, status === "done" ? "done · idle" : status === "off" && w.owner_paused ? "paused by you" : status))}${act ? fact("Last " + act.label, esc(when(act.at)) + " (" + esc(ago(act.at)) + ")") : ""}${fact("Sessions today", w.sessions_today)}${fact("Cost today", usd(w.cost_today))}${fact("Open blockers", w.blockers.length ? w.blockers.map(n => repoUrl ? `<a href="${repoUrl}/issues/${n}" target="_blank" rel="noopener">#${n}</a>` : "#" + n).join(" ") : "none")}${Object.keys(w.failures).length ? fact("Failed attempts", esc(Object.entries(w.failures).map(([k, v]) => k + ": " + v).join(", "))) : ""}${w.stash_pending ? fact("Stashed work", "resumes next session") : ""}</div>
+        ${rolesHtml(be)}
+        <div><h3>Recent sessions</h3>${sessionsTable(w.recent)}</div>`,
+      acts: [pauseCtrl, ...(w.owner_paused || w.started === false ? [] : [{label: "Stop current session", action: "stop-session", target: w.repo, danger: true,
+        note: "Interrupts the running session now; its work is stashed and the worker picks it up on its next tick (5 min)."}])],
+      links: repoUrl ? [[w.repo + " on GitHub", repoUrl, "Code and README"], ["Issues", repoUrl + "/issues", "Tasks, blockers, run jobs"], ["Pull requests", repoUrl + "/pulls", "Agent PRs"],
+        ["New task issue", repoUrl + "/issues/new?labels=task", "Starts a session on the next tick"], ["Actions", repoUrl + "/actions", "CI and scheduled jobs"], ...links] : links,
+      cmds: [["Latest session logs", `ls -t ${P}/${w.repo}/dispatcher/logs | head`], ["Dispatcher state", `cat ${P}/${w.repo}/dispatcher/state.json`]]});
+  }
+
+  const ov = ar.overseer, ovLast = ov.last;
+  const ovNext = ovLast ? (ovLast.end || ovLast.start) + 86400 : null;
+  out.push({id: "overseer", section: R, child: true, name: "Overseer", status: cs !== "up" ? inherit(cs) : ov.running ? "running" : ovLast && ovLast.exit !== 0 ? "failed" : "up",
+    sub: ovLast ? "last report " + ago(ovLast.end || ovLast.start) : "no run yet", time: ovLast && (ovLast.end || ovLast.start), where: R + " · daily",
+    head: "Runs at most once a day when every worker is idle or blocked, and posts a status report on the ops repo.",
+    tags: {cadence: ["sched", "≤ once a day"], models: modelTags(be, ["overseer"]), conns: ["GitHub", "agent-memory"], connUrl: {"GitHub": gh(OPS(), "/issues")}},
+    schedule: {now: "At most once every 24 hours", state: cs === "up" ? "on" : "off", next: ovNext, nextLabel: "Earliest next run",
+      src: "supervisor minimum interval 24 h · only when no worker is mid-session",
+      ctrls: [{label: "Change interval", soon: "The 24-hour minimum is a constant in the supervisor (a change in the agent loop)."}]},
+    body: `<div><h3>Recent runs</h3>${sessionsTable(ov.recent)}</div>`,
+    acts: [{label: "Run overseer now", action: "overseer-now", target: OPS(), primary: true, note: "One Claude session. Skipped if an overseer run is already going."}],
+    links: [["Status reports", gh(OPS(), "/issues?q=is%3Aissue+%22Status+report%22"), "Where each report is posted"]],
+    cmds: [["Latest overseer output", `ls -t ${P}/${OPS()}/dispatcher/logs/*overseer* | head -3`]]});
+
+  out.push({id: "bridge", section: R, child: true, name: "Telegram bridge", status: cs !== "up" ? inherit(cs) : ar.bridge.running ? "up" : "down",
+    sub: ar.bridge.running ? "listening" : "not running", time: ar.bridge.last_activity, where: R + " · long-running",
+    head: "Two-way phone channel for the agent loop. GitHub issues stay the record; Telegram is the front-end.",
+    tags: {cadence: ["on", "long-running"], models: modelTags(be, ["chat"]), conns: ["Telegram", "GitHub"]},
+    schedule: {now: "Continuous", state: cs === "up" && ar.bridge.running ? "on" : "off", src: "polls the notification topic and long-polls the Telegram Bot API",
+      extra: ["Stops and starts with " + R + "."], ctrls: [arStop]},
+    body: `<div class="facts">${fact("Process", ar.bridge.running ? '<span class="ok">running</span>' : '<span class="bad">not running</span>')}${fact("Last state write", esc(ago(ar.bridge.last_activity)))}</div>`,
+    acts: [{label: "Restart " + R, action: "restart", target: R, danger: true, note: "The bridge restarts with the container; running sessions stop gently and resume on the next tick."}],
+    links: [Lk("botfather")],
+    cmds: [["Bridge lines in the log", `docker logs --tail 300 ${R} | grep -i bridge`]]});
+
+  out.push({id: "memory", section: R, child: true, name: "agent-memory", status: cs !== "up" ? inherit(cs) : ar.memory.running ? "up" : "down",
+    sub: "SQLite store · loopback only", where: R + " · long-running",
+    head: "No model. Workers read a capped memory block and save one-line outcomes; the overseer reads all scopes.",
+    tags: {cadence: ["on", "long-running"], conns: ["local only"]},
+    schedule: {now: "Continuous", state: cs === "up" && ar.memory.running ? "on" : "off", src: "started by the supervisor", extra: ["Stops and starts with " + R + "."]},
+    body: `<div class="facts">${fact("Process", ar.memory.running ? '<span class="ok">running</span>' : '<span class="bad">not running</span>')}</div>`, cmds: []});
+
+  const jb = d.job_bot, js = containerStatus(jb.container);
+  const tz = jb.tz || SITE().timezone || "UTC";
+  const jbStop = containerCtrl(J, jb.container, "Stopping " + J + " also stops its Telegram chat and the mail monitor.");
+  out.push({id: "job-bot", lid: "container:" + J, section: J, name: "Daily job search", status: js === "up" && jb.last_failure ? "attention" : js,
+    sub: jb.next_run ? "next run " + jb.next_run.slice(0, 16) : "Mon–Fri " + (jb.run_at || "—"), time: jb.last_run ? Date.parse(jb.last_run) / 1000 : null, where: "container · " + J,
+    head: "Scheduled job-search daemon: scans postings, scores them and prepares applications. Reports through its own Telegram bot.",
+    tags: {cadence: ["sched", "Mon–Fri " + (jb.run_at || "—")], models: [["claude", "Claude"]], conns: ["Job boards", "Telegram", "Nextcloud", "ntfy"]},
+    schedule: {now: "Mon–Fri at " + (jb.run_at || "—") + " (" + tz + ")", state: js === "up" ? "on" : "off",
+      next: jb.next_run ? Date.parse(jb.next_run.replace(" ", "T")) / 1000 : null,
+      src: "RUN_AT in " + J + "'s .env (Infisical template) · weekdays are fixed in the code",
+      ctrls: [{label: "Run time", action: "jobbot-time", target: J, input: {type: "time", value: jb.run_at || "07:00"}, note: "Saving recreates " + J + " within about a minute."}, jbStop]},
+    body: `<div class="facts">${containerFacts(jb.container)}${fact("Last run", esc(jb.last_run ? when(Date.parse(jb.last_run) / 1000) : "none in 4 days"))}${fact("New postings last run", jb.last_run_new != null ? jb.last_run_new + " of " + jb.last_run_seen : "—")}${fact("Next run", esc(jb.next_run ? jb.next_run.slice(0, 16) : "—"))}${jb.last_failure ? fact("Last failure", '<span class="bad">' + esc(jb.last_failure) + "</span>") : ""}</div>`,
+    acts: [{label: "Run job search now", action: "jobbot-run-now", target: J, primary: true, note: "A full run with model costs."},
+      {label: "Restart " + J, action: "restart", target: J, danger: true}],
+    links: [Lk("claudeUsage")],
+    cmds: [["Last run report", `docker logs --tail 120 ${J}`], ["Restart", `docker restart ${J}`]]});
+  const mail = jb.mail_interval_s ?? 3600;
+  out.push({id: "gmail", section: J, child: true, name: "Mail status monitor", status: js !== "up" ? inherit(js) : !mail ? "dormant" : jb.mail_check_failures_recent ? "attention" : "up",
+    sub: !mail ? "turned off" : jb.mail_check_failures_recent ? jb.mail_check_failures_recent + " recent failures" : intervalHuman(mail).toLowerCase() + " · no errors", where: J + " · " + intervalHuman(mail).toLowerCase(),
+    head: "Reads application mail and updates the tracker. Keyword rules, no model.",
+    tags: {cadence: mail ? ["sched", intervalHuman(mail).toLowerCase()] : ["off", "off"], conns: ["Gmail", "Nextcloud"]},
+    schedule: {now: intervalHuman(mail), state: js === "up" && mail ? "on" : "off", src: "EMAIL_CHECK_INTERVAL_S in " + J + "'s .env (0 = off) · checked between daily runs",
+      ctrls: [{label: "Interval", action: "jobbot-mail", target: J, input: {type: "select", value: String(mail), options: [["1800", "Every 30 minutes"], ["3600", "Every hour"], ["7200", "Every 2 hours"], ["21600", "Every 6 hours"], ["0", "Off"]]}, note: "Saving recreates " + J + " within about a minute."}]},
+    body: `<div class="facts">${fact("Recent check failures", jb.mail_check_failures_recent)}</div>`,
+    acts: [{label: "Restart " + J, action: "restart", target: J, danger: true, note: "The monitor runs inside the " + J + " daemon."}],
+    cmds: [["Failures in the log", `docker logs --since 24h ${J} | grep 'email status'`]]});
+  out.push({id: "jb-chat", section: J, child: true, name: "Telegram chat", status: js,
+    sub: "card buttons and commands", where: J + " · on demand",
+    head: J + "'s own Telegram bot, separate from the agent bridge. It prepares applications; you submit them.",
+    tags: {cadence: ["on", "on demand"], models: [["claude", "Claude"]], conns: ["Telegram"]},
+    schedule: {now: "Continuous between runs", state: js === "up" ? "on" : "off", src: "long-polls Telegram while the daemon waits for the next run",
+      extra: ["Stops and starts with " + J + "."], ctrls: [jbStop]},
+    body: `<div class="facts">${containerFacts(jb.container)}</div>`,
+    acts: [{label: "Restart " + J, action: "restart", target: J, danger: true}],
+    links: [Lk("botfather")],
+    cmds: [["Recent chat handling", `docker logs --since 24h ${J} | grep -i chat`]]});
+
+  const ca = d.claude_agent, ccs = containerStatus(ca.container);
+  const active = ca.chats.filter(c => c.active).length;
+  const caStop = containerCtrl(C, ca.container, "Stopping ends every open chat and Remote Control until you start it again.");
+  out.push({id: "claude-agent", lid: "container:" + C, section: C, name: "Remote Control" + (CAT().rc_name ? " “" + CAT().rc_name + "”" : ""), status: ccs === "up" ? (ca.rc_running ? "up" : "down") : ccs,
+    sub: (ca.rc_running ? "serving" : "not serving") + " · " + active + " active chat" + (active === 1 ? "" : "s"), time: ca.container.started, where: "container · " + C,
+    head: "Your Claude chats on the server. Open, rename or end single chats in the Claude app.",
+    tags: {cadence: ["on", "always on"], models: [["claude", "Claude"]], conns: ["claude.ai", "GitHub", "ntfy"]},
+    schedule: {now: "Always on", state: ccs === "up" && ca.rc_running ? "on" : "off", src: "claude remote-control in the container, restarted when it exits",
+      ctrls: [caStop]},
+    body: `<div class="facts">${containerFacts(ca.container)}${fact("Remote Control", ca.rc_running ? '<span class="ok">serving</span>' : '<span class="bad">not running</span>')}${fact("Restart loop", ca.rc_loop ? "running" : '<span class="warn">not seen</span>')}${fact("claude processes", ca.claude_processes)}</div>`,
+    acts: [{label: "Restart " + C, action: "restart", target: C, danger: true, note: "Ends every open chat, including one you may be using to talk to Claude."}],
+    links: [Lk("claudeCode"), Lk("claudeUsage"), Lk("ccDocs")],
+    cmds: [["Restart (ends all chats)", `docker restart ${C}`]]});
+  for (const c of ca.chats) {
+    out.push({id: "chat-" + c.id, lid: "chat:" + c.id, section: C, group: "Chats", name: c.title || "Untitled chat", status: c.active ? "running" : "dormant",
+      sub: (c.kind || "chat") + " · " + c.id.slice(0, 8), time: c.last_activity, where: C + " · chat", rowTags: false,
+      head: c.active ? "Active in the last 15 minutes." : "Idle. Transcript kept on disk.",
+      tags: {models: [["claude", "Claude"]], conns: ["claude.ai"]},
+      schedule: {now: "On demand", state: c.active ? "on" : "off", src: "runs only while you send it messages"},
+      how: [c.kind === "terminal" ? "Started from a terminal in " + C + ". It also shows up in the Claude app." : "Started from the Claude app or claude.ai through Remote Control.",
+        "Continue it in the Claude app, or in a terminal with the resume command below."],
+      body: `<div class="facts">${fact("Kind", esc(c.kind || "chat"))}${fact("Last activity", esc(when(c.last_activity)))}${fact("Session id", '<span class="mono">' + esc(c.id) + "</span>")}</div>`,
+      links: [Lk("claudeCode")],
+      cmds: [["Resume in a terminal (inside " + C + ")", "claude --resume " + c.id]]});
+  }
+
+  const tiers = d.overwatch.tiers, unit = (SITE().overwatch_unit || "overwatch-");
+  for (const t of tiers) {
+    const st = t.timer === "unknown" ? "unknown" : t.running ? "running" : t.enabled === false || t.timer !== "active" ? "down" : t.result && t.result !== "success" ? "failed" : "up";
+    const cal = t.calendar || "";
+    const on = t.enabled !== false && t.timer !== "inactive";
+    out.push({id: "ow-" + t.tier, lid: "timer:overwatch-" + t.tier, section: "Overwatch", name: t.tier[0].toUpperCase() + t.tier.slice(1) + " review", status: t.enabled === false ? "off" : st,
+      sub: on ? "next " + (t.next ? when(t.next) : "—") : "timer off", time: t.last, where: "host · systemd timer " + unit + t.tier,
+      head: "A scheduled health review of the server.",
+      tags: {cadence: on ? ["sched", t.tier] : ["off", "off"], models: [["claude", "Claude"]], conns: ["Telegram", "claude.ai"]},
+      schedule: {now: cal || "—", state: on ? "on" : "off", next: on ? t.next : null, src: "OnCalendar in " + unit + t.tier + ".timer (systemd calendar syntax)",
+        ctrls: [{label: "Calendar", action: "overwatch-calendar", target: t.tier, input: {type: "text", value: cal, placeholder: "Sun *-*-* 08:00:00"}, note: "Format: systemd OnCalendar, e.g. Sun *-*-* 08:00:00 Europe/Berlin."},
+          on ? {label: "Turn off " + t.tier + " timer", action: "overwatch-timer", target: t.tier, value: "off", danger: true}
+             : {label: "Turn on " + t.tier + " timer", action: "overwatch-timer", target: t.tier, value: "on", primary: true}]},
+      body: `<div class="facts">${fact("Timer", esc(on ? t.timer : "disabled"))}${fact("Last run", esc(when(t.last)))}${fact("Result", t.result ? (t.result === "success" ? '<span class="ok">success</span>' : '<span class="bad">' + esc(t.result) + "</span>") : "—")}${fact("Next run", esc(on ? when(t.next) : "—"))}</div>`,
+      acts: [{label: "Run " + t.tier + " review now", action: "overwatch-run", target: t.tier, primary: true, note: "Result arrives in the review bot."}],
+      cmds: [["Last run log", `journalctl -u ${unit}${t.tier} -n 60 --no-pager`], ["Run now", `sudo systemctl start ${unit}${t.tier}.service`]]});
+  }
+  if (tiers.length) {
+    const owOn = tiers.filter(t => t.enabled !== false && t.timer !== "inactive").length;
+    out.push({id: "ow-bot", section: "Overwatch", child: true, name: "Review bot", status: owOn ? "up" : "dormant",
+      sub: "Telegram · send-only", where: "host · Telegram bot",
+      head: "A Telegram bot that only sends the review results. It doesn't read your messages.",
+      tags: {cadence: ["sched", "after each review"], conns: ["Telegram"]},
+      schedule: {now: "After each review run", state: owOn ? "on" : "off", src: owOn + " of " + tiers.length + " timers on · follows the review timers above"},
+      acts: [{label: "Accept current security state", action: "overwatch-accept", target: "all", note: "Tells the reviewer the current security changes are intended."}],
+      body: "", links: [Lk("botfather")], cmds: [["Timers", `systemctl list-timers '${unit}*'`]]});
+  }
+  return out;
+}
+
+// Descriptions, links and commands from the private catalog override the generic text above.
+function catalogize(list) {
+  const items = CAT().items || {};
+  for (const it of list) {
+    const o = items[it.id];
+    if (!o) continue;
+    if (o.head) it.head = o.head;
+    if (o.how) it.how = o.how;
+    if (o.links) it.links = o.links;
+    if (o.extra_links) it.links = [...(it.links || []), ...o.extra_links];
+    if (o.cmds) it.cmds = o.cmds;
+    if (o.name) it.name = o.name;
+    if (o.schedule_src && it.schedule) it.schedule = Object.assign({}, it.schedule, {src: o.schedule_src});
+    if (o.sub) it.sub = o.sub;
+    if (o.where) it.where = o.where;
+    if (o.tags && it.tags) {
+      const t = Object.assign({}, it.tags, o.tags);
+      for (const k of ["connUrl", "connHint"]) if (it.tags[k] || o.tags[k]) t[k] = Object.assign({}, it.tags[k], o.tags[k]);
+      it.tags = t;
+    }
+  }
+  return list;
+}
+
+// ---- when schedules fire: cron, systemd OnCalendar, weekday times ----
+// All in the browser's clock except GitHub cron (UTC); set site.timezone to the server's zone so the collector agrees.
+const NO_HOOK = "Needs a pause hook in the dispatcher.";
+const NO_TICK = "The 5-minute tick is a constant in the supervisor; making it adjustable is a dispatcher change.";
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const trunc = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+function cronField(str, min, max) {
+  const out = new Set();
+  for (const part of str.split(",")) {
+    const [range, stepS] = part.split("/"), step = stepS ? +stepS : 1;
+    let a, b;
+    if (range === "*") { a = min; b = max; }
+    else if (range.includes("-")) [a, b] = range.split("-").map(Number);
+    else { a = +range; b = stepS ? max : a; }
+    if (!Number.isFinite(a) || !Number.isFinite(b) || !(step >= 1)) return null;
+    for (let v = a; v <= b; v += step) out.add(v);
+  }
+  return out;
+}
+function cronTimes(expr, from, to, utc) {
+  const f = (expr || "").trim().split(/\s+/);
+  if (f.length !== 5) return null;
+  const mi = cronField(f[0], 0, 59), ho = cronField(f[1], 0, 23), dom = cronField(f[2], 1, 31), mon = cronField(f[3], 1, 12), dow = cronField(f[4], 0, 7);
+  if (!mi || !ho || !dom || !mon || !dow) return null;
+  if (dow.has(7)) dow.add(0);
+  const domAny = f[2] === "*", dowAny = f[4] === "*", hs = [...ho].sort((a, b) => a - b), ms = [...mi].sort((a, b) => a - b), out = [];
+  const s = new Date(from);
+  let day = utc ? Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate()) : new Date(s.getFullYear(), s.getMonth(), s.getDate()).getTime();
+  for (let k = 0; k < 800 && day <= to; k++) {
+    const d = new Date(day);
+    const [Y, M, D, W] = utc ? [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCDay()] : [d.getFullYear(), d.getMonth(), d.getDate(), d.getDay()];
+    const dayOk = mon.has(M + 1) && (domAny && dowAny ? true : domAny ? dow.has(W) : dowAny ? dom.has(D) : dom.has(D) || dow.has(W));
+    if (dayOk) for (const h of hs) for (const m of ms) {
+      const t = utc ? Date.UTC(Y, M, D, h, m) : new Date(Y, M, D, h, m).getTime();
+      if (t >= from && t <= to) out.push(t);
+    }
+    day = utc ? Date.UTC(Y, M, D + 1) : new Date(Y, M, D + 1).getTime();
+  }
+  return out;
+}
+const WD = {sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6};
+function calSet(spec, max) {   // "*" -> null (any), "01,04", "1..5", "1/2"; undefined when unreadable
+  if (spec === "*") return null;
+  const out = new Set();
+  for (const p of spec.split(",")) {
+    const m = p.match(/^(\d+)(?:\.\.(\d+))?(?:\/(\d+))?$/);
+    if (!m) return undefined;
+    const a = +m[1], b = m[2] ? +m[2] : m[3] ? max : a, st = m[3] ? +m[3] : 1;
+    for (let v = a; v <= b; v += st) out.add(v);
+  }
+  return out;
+}
+function calTimes(cal, from, to) {
+  let s = (cal || "").trim();
+  const alias = {daily: "*-*-* 00:00:00", weekly: "Mon *-*-* 00:00:00", monthly: "*-*-01 00:00:00"};
+  if (alias[s.toLowerCase()]) s = alias[s.toLowerCase()];
+  const tok = s.split(/\s+/);
+  let i = 0, wd = null;
+  if (/^[A-Za-z]{3}/.test(tok[0])) {
+    wd = new Set();
+    for (const p of tok[0].split(",")) {
+      const r = p.toLowerCase().split("..");
+      const a = WD[r[0].slice(0, 3)], b = r[1] ? WD[r[1].slice(0, 3)] : a;
+      if (a === undefined || b === undefined) return null;
+      for (let v = a; ; v = (v + 1) % 7) { wd.add(v); if (v === b) break; }
+    }
+    i = 1;
+  }
+  let date = "*-*-*";
+  if (tok[i] && tok[i].includes("-")) date = tok[i++];
+  if (!tok[i] || !tok[i].includes(":")) return null;
+  const tp = tok[i].split(":").map(Number), hh = tp[0], mm = tp[1] || 0, dp = date.split("-");
+  if (dp.length !== 3 || !Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  const ys = calSet(dp[0], 9999), ms = calSet(dp[1], 12), ds = calSet(dp[2], 31);
+  if ([ys, ms, ds].includes(undefined)) return null;
+  const out = [], st = new Date(from);
+  for (let k = 0; k < 800; k++) {
+    const day = new Date(st.getFullYear(), st.getMonth(), st.getDate() + k);
+    if (day.getTime() > to) break;
+    if ((!ys || ys.has(day.getFullYear())) && (!ms || ms.has(day.getMonth() + 1)) && (!ds || ds.has(day.getDate())) && (!wd || wd.has(day.getDay()))) {
+      const t = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh, mm).getTime();
+      if (t >= from && t <= to) out.push(t);
+    }
+  }
+  return out;
+}
+function calHuman(cal) {
+  const m = (cal || "").match(/^(?:([A-Za-z,.]+)\s+)?(?:\*|\d{4})-([\d,*.]+)-([\d,*.]+)\s+(\d{1,2}):(\d{2})/);
+  if (!m) return cal;
+  const [, wd, mo, dy] = m, t = pad(m[4]) + ":" + m[5];
+  if (mo === "*" && dy === "*") return wd ? "Every " + wd.replace(/,/g, ", ").replace("..", "–") + " at " + t : "Daily at " + t;
+  if (/^\d+$/.test(dy)) return "Day " + (+dy) + " of " + (mo === "*" ? "every month" : mo.split(",").map(x => MON[+x - 1] || x).join(", ")) + " at " + t;
+  return cal;
+}
+function weekdayTimes(hhmm, from, to) {
+  const [h, m] = (hhmm || "07:00").split(":").map(Number), out = [], st = new Date(from);
+  for (let k = 0; k < 800; k++) {
+    const d = new Date(st.getFullYear(), st.getMonth(), st.getDate() + k, h, m);
+    if (d.getTime() > to) break;
+    if (d.getTime() >= from && d.getDay() >= 1 && d.getDay() <= 5) out.push(d.getTime());
+  }
+  return out;
+}
+
+// ---- Schedules view ----
+const SCH_GROUPS = ["Always on", "Frequent", "Daily", "Weekly", "Monthly and rarer", "Decommissioned"];
+function buildSchedules(d, agents) {
+  const A = Object.fromEntries(agents.map(i => [i.id, i]));
+  const ar = d.agent_runner, jb = d.job_bot, now = Date.now(), out = [];
+  const R = CT().runner, J = CT().jobbot, C = CT().claude;
+  const sch = o => {
+    const off = o.schedule.state === "off";
+    const next = o.occ.times ? (o.occ.times(now, now + 400 * DAY) || [])[0] : o.occ.at || null;
+    out.push(Object.assign({}, o, {section: off ? "Decommissioned" : o.group, status: off ? "off" : (o.status || "up"),
+      occ: off ? {kind: "off"} : o.occ, next, time: next ? next / 1000 : null}));
+  };
+  const it = id => A[id] || {schedule: {state: "off", ctrls: []}, tags: {}, links: [], cmds: [], name: id};
+  const upOr = s => ["running", "up", "done", "idle"].includes(s) ? "up" : s;
+  const groupOf = human => /^Every \w{3} /.test(human) ? "Weekly" : /^(Monthly|Day \d)/.test(human) ? "Monthly and rarer" : "Daily";
+
+  const rc = it("claude-agent");
+  sch({id: "sch-rc", group: "Always on", name: rc.name, sub: C + " · Remote Control", agent: "claude-agent",
+    where: C, defined: "claude remote-control in " + C, status: upOr(rc.status),
+    head: "Stays connected so you can open a chat from the phone at any time; restarted when it exits.",
+    tags: rc.tags, schedule: rc.schedule, occ: {kind: "continuous"}, links: rc.links, cmds: rc.cmds});
+  const br = it("bridge");
+  sch({id: "sch-bridge", group: "Always on", name: "Telegram bridge", sub: R + " · polls notifications + Telegram", agent: "bridge",
+    where: R, defined: "started by the supervisor", status: upOr(br.status), head: br.head, tags: br.tags, schedule: br.schedule,
+    occ: {kind: "continuous"}, links: br.links, cmds: br.cmds});
+  const jc = it("jb-chat");
+  sch({id: "sch-jbchat", group: "Always on", name: J + " Telegram chat", sub: J + " · between runs", agent: "jb-chat",
+    where: J, defined: J + " daemon (long-polls Telegram)", status: upOr(jc.status), head: jc.head, tags: jc.tags, schedule: jc.schedule,
+    occ: {kind: "continuous"}, links: jc.links, cmds: jc.cmds});
+
+  const arIt = it("agent-runner");
+  sch({id: "sch-ticks", group: "Frequent", name: "Worker ticks", sub: ar.workers.length + " project workers · " + R, agent: "agent-runner",
+    where: R, defined: "the supervisor's restart delay (5 min)", status: upOr(arIt.status),
+    head: "Each worker checks GitHub for work every 5 minutes and runs sessions back to back while there is work. An idle tick costs only git and gh queries, no model call.",
+    tags: {cadence: ["on", "every 5 min"], models: arIt.tags.models, conns: ["GitHub", "ntfy"]},
+    schedule: {now: "Every 5 minutes", state: arIt.schedule.state, src: "supervisor restart delay · daily session budget shared by all workers",
+      ctrls: [arIt.schedule.ctrls[0], {label: "Change tick interval", soon: NO_TICK}].filter(Boolean),
+      extra: ["Pause a single project from its row in Agents → By location."]},
+    occ: {kind: "interval", label: "every 5 min"}, links: arIt.links, cmds: [["Follow the supervisor log", `docker logs -f --tail 100 ${R}`]]});
+  const gm = it("gmail"), mail = jb.mail_interval_s ?? 3600;
+  sch({id: "sch-gmail", group: "Frequent", name: gm.name, sub: intervalHuman(mail) + " · " + J, agent: "gmail",
+    where: J, defined: "EMAIL_CHECK_INTERVAL_S in " + J + "'s .env", status: upOr(gm.status), head: gm.head, tags: gm.tags, schedule: gm.schedule,
+    occ: {kind: "interval", label: intervalHuman(mail).toLowerCase()}, links: gm.links, cmds: gm.cmds});
+
+  const jbIt = it("job-bot");
+  sch({id: "sch-jobbot", group: "Daily", name: "Daily job search", sub: "Mon–Fri " + (jb.run_at || "—") + " · " + J, agent: "job-bot",
+    where: J, defined: "RUN_AT in " + J + "'s .env (Infisical template)", status: upOr(jbIt.status), head: jbIt.head, tags: jbIt.tags, schedule: jbIt.schedule,
+    occ: {kind: "times", times: (f, t) => jb.run_at ? weekdayTimes(jb.run_at, f, t) : []}, links: jbIt.links, cmds: jbIt.cmds});
+  const ov = it("overseer"), ovLast = ar.overseer.last, ovAt = ovLast ? ((ovLast.end || ovLast.start) + 86400) * 1000 : null;
+  sch({id: "sch-overseer", group: "Daily", name: "Overseer", sub: "≤ once a day · " + R, agent: "overseer",
+    where: R, defined: "the supervisor's 24 h minimum", status: upOr(ov.status), head: ov.head, tags: ov.tags, schedule: ov.schedule,
+    occ: {kind: "earliest", at: ovAt && ovAt > now ? ovAt : now}, links: ov.links, cmds: ov.cmds});
+  const owner = SITE().github_owner;
+  for (const wf of ar.workflows || []) {
+    const gate = wf.gate_var, human = wf.crons.map(c => cronHuman(c, "UTC")).join(", ");
+    const wfUrl = gh(wf.repo, "/actions/workflows/" + wf.file), varsUrl = gh(wf.repo, "/settings/variables/actions");
+    sch({id: "sch-wf-" + wf.repo + "-" + wf.name, lid: "workflow:" + wf.repo + ":" + wf.file, group: groupOf(human),
+      name: wf.name, sub: human + (gate ? " · only if armed" : "") + " · " + wf.repo, agent: "w-" + wf.repo, where: wf.repo,
+      defined: ".github/workflows/" + wf.file + " (GitHub Actions, UTC)", status: "up",
+      head: "Files a run issue that the " + wf.repo + " worker executes directly, without an agent session.",
+      tags: {cadence: ["sched", "GitHub cron"], conns: ["GitHub"], connUrl: {"GitHub": wfUrl}},
+      schedule: {now: human, state: "on", src: "cron " + wf.crons.join(", ") + " in " + wf.file + (gate ? " · fires only while " + gate + " = enabled" : ""),
+        extra: gate ? [`Whether <code>${esc(gate)}</code> is set lives on GitHub, so the console can't tell; the chart shows these runs hollow.`] : [],
+        ctrls: [{label: "Disable or run on GitHub", link: wfUrl}, ...(gate ? [{label: "Arm or disarm (" + gate + ")", link: varsUrl}] : [])]},
+      occ: {kind: "times", maybe: !!gate, times: (f, t) => wf.crons.flatMap(c => cronTimes(c, f, t, true) || []).sort((a, b) => a - b)},
+      links: [[wf.name + " workflow", wfUrl, "Runs, Disable workflow, Run workflow"], ...(gate ? [["Repository variables", varsUrl, "Arm or disarm " + gate]] : [])],
+      cmds: gate && owner ? [["Arm", `gh variable set ${gate} --body enabled -R ${owner}/${wf.repo}`], ["Disarm", `gh variable delete ${gate} -R ${owner}/${wf.repo}`]] : []});
+  }
+  const unit = SITE().overwatch_unit || "overwatch-";
+  for (const t of d.overwatch.tiers) {
+    const o = it("ow-" + t.tier), cal = o.schedule.now;
+    sch({id: "sch-ow-" + t.tier, lid: "timer:overwatch-" + t.tier, group: t.tier === "daily" ? "Daily" : t.tier === "weekly" ? "Weekly" : groupOf(calHuman(cal)),
+      name: o.name, sub: calHuman(cal) + " · host timer", agent: "ow-" + t.tier, where: "host", defined: unit + t.tier + ".timer (OnCalendar)",
+      status: o.status === "failed" ? "failed" : upOr(o.status), head: o.head, tags: o.tags, schedule: o.schedule,
+      occ: {kind: "times", times: (f, to) => calTimes(cal, f, to) || (t.next && t.next * 1000 >= f && t.next * 1000 <= to ? [t.next * 1000] : [])},
+      links: o.links, cmds: o.cmds});
+  }
+  for (const [job, c] of Object.entries(ar.cron || {})) {
+    const owner_item = c.project ? it("w-" + c.project) : null, human = cronHuman(c.schedule);
+    sch({id: "sch-cron-" + job, lid: "cron:" + job, group: groupOf(human), name: c.label || job, sub: human + (c.project ? " · " + c.project : " · host"),
+      agent: c.project ? "w-" + c.project : "agent-runner", where: "host cron", defined: "crontab line with " + (c.match || job), status: "up",
+      head: "A host cron job" + (c.project ? " for " + c.project : "") + ".",
+      tags: {cadence: ["sched", "cron"], conns: []},
+      schedule: {now: human, state: c.enabled ? "on" : "off", src: "crontab: " + c.schedule + " (server time)",
+        ctrls: owner_item ? (owner_item.schedule.ctrls || []).filter(x => x.action === "cron" && x.target === job) : []},
+      occ: {kind: "times", times: (f, t) => cronTimes(c.schedule, f, t, false)}, links: [], cmds: []});
+  }
+  for (const s of out) {
+    const list = s.occ.times ? (s.occ.times(now, now + 400 * DAY) || []).slice(0, 3) : [];
+    const nextTxt = list.length ? list.map(t => esc(when(t / 1000))).join("<br>")
+      : esc(s.occ.kind === "continuous" ? "Runs continuously" : s.occ.kind === "interval" ? s.schedule.now : s.occ.kind === "earliest" && s.next ? "Earliest " + when(s.next / 1000) : s.occ.kind === "off" ? "Stopped" : "—");
+    s.body = `<div class="facts">${fact("Next runs", nextTxt)}${fact("Defined in", esc(s.defined))}${fact("Belongs to", `<button type="button" class="goto" data-goto="${esc(s.agent)}">${esc(it(s.agent).name)} →</button>`)}</div>`;
+  }
+  return out.sort((a, b) => SCH_GROUPS.indexOf(a.section) - SCH_GROUPS.indexOf(b.section));
+}
+
+// ---- timeline: next 7 days, one row per schedule ----
+function renderTimeline() {
+  const box = document.getElementById("viewtop");
+  box.hidden = view !== "schedules";
+  if (box.hidden) return;
+  const wrap = document.getElementById("tl-svg");
+  const W = Math.max(700, wrap.clientWidth || 1000), LBL = 196, SIDE = 120, ROW = 24, TOP = 24;
+  const now = Date.now(), t0 = new Date(); t0.setHours(0, 0, 0, 0);
+  const from = t0.getTime(), to = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + 7).getTime();
+  const x = t => LBL + (t - from) / (to - from) * (W - LBL - SIDE);
+  const H = TOP + items.length * ROW + 6;
+  const parts = [`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Schedules over the next 7 days; details in the list">`];
+  for (let k = 0; k <= 7; k++) {
+    const t = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + k).getTime(), X = x(t).toFixed(1);
+    parts.push(`<line class="tl-grid" x1="${X}" y1="${TOP - 6}" x2="${X}" y2="${H - 4}"/>`);
+    if (k < 7) parts.push(`<text class="tl-day" x="${(+X + 5).toFixed(1)}" y="14">${esc(new Date(t).toLocaleDateString([], {weekday: "short", day: "numeric"}))}</text>`);
+  }
+  items.forEach((r, i) => {
+    const y = TOP + i * ROW, cy = y + ROW / 2, o = r.occ || {kind: "off"};
+    const cls = ["tl-row", r.id === sel.schedules ? "sel" : "", o.kind === "off" ? "off" : ""].filter(Boolean).join(" ");
+    parts.push(`<g class="${cls}" data-sel="${esc(r.id)}" tabindex="0" role="button" aria-label="${esc(r.name + ": " + r.sub)}">`);
+    parts.push(`<rect class="tl-hit" x="0" y="${y}" width="${W}" height="${ROW}" rx="4"/>`);
+    parts.push(`<text class="tl-name" x="8" y="${cy + 4}">${esc(trunc(r.name, 27))}</text>`);
+    let side = "";
+    if (o.kind === "continuous") { parts.push(`<rect class="tl-bar" x="${LBL}" y="${cy - 3}" width="${(x(to) - LBL).toFixed(1)}" height="6" rx="3"/>`); side = "always on"; }
+    else if (o.kind === "interval") { parts.push(`<line class="tl-int" x1="${LBL}" y1="${cy}" x2="${x(to).toFixed(1)}" y2="${cy}"/>`); side = o.label; }
+    else if (o.kind === "earliest") {
+      const at = Math.max(o.at, now);
+      if (at <= to) parts.push(`<circle class="tl-dot maybe" cx="${x(at).toFixed(1)}" cy="${cy}" r="5"/><circle class="tl-hot" cx="${x(at).toFixed(1)}" cy="${cy}" r="12" data-tip="${esc(when(at / 1000))}" data-tip2="${esc(r.name + " · earliest; runs when the workers are idle")}"/>`);
+      side = "≤ once a day";
+    } else if (o.kind === "times") {
+      const ts = (o.times(from, to) || []);
+      for (const t of ts) {
+        const X = x(t).toFixed(1), past = t < now;
+        parts.push(`<circle class="tl-dot${o.maybe ? " maybe" : ""}${past ? " past" : ""}" cx="${X}" cy="${cy}" r="5"/><circle class="tl-hot" cx="${X}" cy="${cy}" r="12" data-tip="${esc(when(t / 1000))}" data-tip2="${esc(r.name + (o.maybe ? " · only if armed" : "") + (past ? " · earlier today" : ""))}"/>`);
+      }
+      if (!ts.some(t => t >= now)) side = r.next ? "next " + new Date(r.next).toLocaleDateString([], {day: "numeric", month: "short"}) : "";
+    } else side = "stopped";
+    if (side) parts.push(`<text class="tl-side" x="${W - 8}" y="${cy + 4}" text-anchor="end">${esc(side)}</text>`);
+    parts.push(`</g>`);
+  });
+  const nx = x(now).toFixed(1);
+  parts.push(`<line class="tl-now" x1="${nx}" y1="${TOP - 8}" x2="${nx}" y2="${H - 2}"/><text class="tl-nowl" x="${nx}" y="${TOP - 10}" text-anchor="middle">now</text></svg>`);
+  wrap.innerHTML = parts.join("");
+}
+function tlTip(e) {
+  const hot = e.target.closest && e.target.closest("[data-tip]"), scroll = e.target.closest && e.target.closest(".tl-scroll");
+  if (!scroll) return;
+  const tip = scroll.querySelector(".tl-tip");
+  if (!hot) { tip.hidden = true; return; }
+  const host = scroll.getBoundingClientRect(), r = hot.getBoundingClientRect();
+  tip.replaceChildren();
+  const b = document.createElement("b"); b.textContent = hot.dataset.tip;
+  const s = document.createElement("span"); s.textContent = hot.dataset.tip2 || "";
+  tip.append(b, s);
+  tip.hidden = false;
+  tip.style.left = Math.min(r.left - host.left + r.width / 2, host.width - 120) + "px";
+  tip.style.top = (r.top - host.top - 6) + "px";
+}
+
+// ---- Connections view ----
+// Connections come from the private catalog: credentials, where they are stored, who uses them and links.
+const CONNS = () => CAT().connections || [];
+function buildConnections(d, agents) {
+  const A = Object.fromEntries(agents.map(i => [i.id, i]));
+  const live = id => A[id] && ["running", "up", "done", "idle", "attention"].includes(A[id].status);
+  return CONNS().map(c => {
+    c = Object.assign({users: [], tags: [], cred: "—"}, c);
+    const inUse = c.users.filter(live).length;
+    const used = c.users.filter(u => A[u]).map(u => `<button type="button" class="goto" data-goto="${esc(u)}">${esc(A[u].name)}</button>`).join("");
+    return {id: "cn-" + c.key, section: c.section, name: c.name, status: inUse ? "up" : "off",
+      sub: c.cred.length > 46 ? trunc(c.cred, 46) : c.cred, where: c.section, head: c.head,
+      tags: {models: c.models, conns: c.tags},
+      body: `<div class="facts">${fact("Credential", esc(c.cred))}${fact("Stored in", esc(c.stored))}${fact("Expiry", esc(c.expiry || "—"))}${fact("Live check", "not yet: Test is planned")}</div>` +
+        `<div><h3>Used by · ${inUse} of ${c.users.length} running</h3><div class="tags">${used}</div></div>` +
+        (c.rotate ? `<p class="note"><b>Rotate:</b> ${esc(c.rotate)}</p>` : ""),
+      how: c.how, links: c.links || [],
+      acts: c.test ? [{label: c.test, action: "conn-test", target: c.key, note: "Runs a harmless check (no message to anyone else, no changes)."}] : [],
+      cmds: []};
+  });
+}
+
+// ---- sidebar: collapsible groups ----
+const SECTION_KINDS = {schedules: {"Always on": "continuous", "Frequent": "minutes to hours"}, connections: {}};
+const isOpen = g => openState[g] ?? !g.endsWith(":History");   // History starts folded
+function rowHtml(r) {
+  return `<button type="button" class="row s-${r.status}${r.child && !r.lifecycle ? " child" : ""}" data-id="${esc(r.id)}" aria-selected="${r.id === sel[SK()]}">` +
+    `<span class="dot" title="${esc(r.status)}"></span><span class="name">${esc(r.name)}</span><span class="time">${esc(r.time ? ago(r.time) : "")}</span>` +
+    `<span class="sub">${esc(r.sub)}</span>${r.rowTags === false ? (r.isNew ? tagsHtml(null, false, true) : "") : tagsHtml(r.tags, false, r.isNew)}</button>`;
+}
+function groupMarks(rows) {
+  const run = rows.some(r => r.status === "running"), attn = rows.some(r => ATTN.includes(r.status));
+  return `${run ? '<span class="dot s-running" title="running"></span>' : ""}${attn ? '<span class="dot s-attention" title="needs a look"></span>' : ""}${rows.length}`;
+}
+const legendConns = () => [...new Set(["GitHub", "claude.ai", ...items.flatMap(i => (i.tags && i.tags.conns) || [])])];
+function legendHtml() {
+  const live = [["running", "running"], ["up", "fine / in use"], ["done", "idle, waiting"], ["attention", "needs a look"], ["down", "down"], ["off", "off (Decommissioned)"], ["history", "removed (History)"]];
+  return `<div class="legend" aria-label="Legend">
+    <span class="lab">Live status</span><div class="tags">${live.map(([s, l]) => `<span class="live"><span class="dot s-${s}"></span>${l}</span>`).join("")}</div>
+    <span class="lab">Runs</span><div class="tags">${pill("new", "new: first seen this week")}${pill("on", "always on")}${pill("sched", "scheduled")}${pill("off", "dormant / off")}</div>
+    <span class="lab">Models</span><div class="tags">${pill("claude", "Claude")}${pill("mistral", "Mistral")}</div>
+    <span class="lab">Connections</span><div class="tags">${legendConns().map(n => conn(n, null)).join("")}</div>
+  </div>`;
+}
+function renderList() {
+  const groups = {}, kinds = view === "agents" ? (agentsMode === "roles" ? ROLE_KINDS : SECTION_KIND()) : SECTION_KINDS[view] || {};
+  for (const it of items) (groups[it.section] = groups[it.section] || []).push(it);
+  const list = document.getElementById("list");
+  list.setAttribute("aria-label", VIEWS.find(v => v.id === view).label);
+  list.innerHTML = subnavHtml() + Object.entries(groups).map(([sec, rows]) => {
+    const subs = {}, gk = view + ":" + sec;
+    for (const r of rows) if (r.group && view === "agents") (subs[r.group] = subs[r.group] || []).push(r);
+    return `<details class="group" data-group="${esc(gk)}"${isOpen(gk) ? " open" : ""}><summary><span class="g-name">${esc(sec)}</span><span class="g-kind">${esc(kinds[sec] || "")}</span><span class="g-count">${groupMarks(rows)}</span></summary>` +
+      rows.filter(r => !(r.group && view === "agents")).map(rowHtml).join("") +
+      Object.entries(subs).map(([g, rs]) => {
+        const k = gk + "/" + g;
+        return `<details class="subgroup" data-group="${esc(k)}"${isOpen(k) ? " open" : ""}><summary>${esc(g)}<span class="g-count">${groupMarks(rs)}</span></summary>${rs.map(rowHtml).join("")}</details>`;
+      }).join("") + `</details>`;
+  }).join("") + legendHtml();
+}
+document.addEventListener("toggle", e => {
+  const g = e.target.dataset && e.target.dataset.group;
+  if (!g) return;
+  openState[g] = e.target.open;
+  save_("agent-console-open", openState);
+}, true);
+const keepInput = e => { const r = e.target.dataset && e.target.dataset.in; if (r) inputVals[r] = e.target.value; };
+document.addEventListener("input", keepInput);
+document.addEventListener("change", keepInput);
+
+// ---- tabs ----
+function renderTabs() {
+  document.getElementById("tabs").innerHTML = VIEWS.map(v =>
+    `<button type="button" role="tab" class="tab" id="tab-${v.id}" data-view="${v.id}" aria-selected="${v.id === view}" tabindex="${v.id === view ? 0 : -1}">${esc(v.label)}</button>`).join("");
+  document.getElementById("app").dataset.view = view;
+}
+function switchView(v, focusTab) {
+  if (v === view) return;
+  view = v; armed = null; result = null;
+  save_("agent-console-view", v);
+  document.getElementById("app").classList.remove("show-detail");
+  render(true);
+  if (focusTab) document.getElementById("tab-" + v).focus();
+}
+
+// ---- detail pane ----
+function renderDetail() {
+  const it = items.find(i => i.id === sel[SK()]);
+  const main = document.getElementById("main");
+  if (!it) { main.innerHTML = '<div class="empty">Pick an item on the left.</div>'; return; }
+  main.innerHTML = `<div class="detail"><button type="button" class="back" id="back">← All ${esc(VIEWS.find(v => v.id === view).label.toLowerCase())}</button>
+    <div class="detail-head"><span class="where">${esc(it.where)}</span><h2>${esc(it.name)} ${chip(it.status, STATUS_LABEL[it.status])}</h2>${tagsHtml(it.tags, true, it.isNew)}<p>${esc(it.head)}</p></div>
+    ${scheduleHtml(it)}
+    ${modelHtml(it)}
+    ${actsHtml(it)}
+    ${secretsBox(it)}
+    ${howHtml(it.how)}
+    ${it.body || ""}
+    ${linksHtml(it.links)}
+    ${(it.cmds || []).length ? `<div><h3>Commands (run on the server)</h3><div class="cmds">${it.cmds.map(c => cmd(c[0], c[1])).join("")}</div></div>` : ""}</div>`;
+}
+// One renderer for action buttons, inline editors and link buttons; `kind` keeps refs of the two lists apart.
+function ctrlsHtml(it, list, kind) {
+  const locked = !session, notes = [], parts = [];
+  list.forEach((a, i) => {
+    if (a.link) { parts.push(`<a class="act link" href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.label)} ↗</a>`); return; }
+    if (!api) return;   // read-only copy: no action controls
+    const ref = it.id + ":" + kind + i, isArmed = armed === ref, term = viaTerminal(a);
+    const off = a.soon || (!term && !api.actions[a.action] ? (OFF_REASON[a.action] || "Not enabled on the server yet (see the README).") : "");
+    const termNote = "⌨ opens the console terminal with this change prefilled: confirm there and type your sudo password.";
+    if (off && !notes.includes(off)) notes.push(off);
+    else if (!off && term && !notes.includes(termNote)) notes.push(termNote);
+    else if (!off && a.note && !notes.includes(a.note)) notes.push(a.note);
+    const disabled = busy || a.current || off || locked;
+    const cls = ["act", a.primary && !disabled ? "primary" : "", a.danger ? "danger" : "", a.current ? "current" : "", isArmed ? "armed" : "", a.soon ? "soon" : ""].filter(Boolean).join(" ");
+    if (a.input) {
+      const v = inputVals[ref] ?? a.input.value ?? "", id = "in-" + ref.replace(/[^\w-]/g, "_");
+      const field = a.input.type === "select"
+        ? `<select id="${id}" data-in="${esc(ref)}"${disabled ? " disabled" : ""}>${a.input.options.map(([ov, ol]) => `<option value="${esc(ov)}"${ov === v ? " selected" : ""}>${esc(ol)}</option>`).join("")}</select>`
+        : `<input id="${id}" data-in="${esc(ref)}" type="${a.input.type}" value="${esc(v)}" placeholder="${esc(a.input.placeholder || "")}"${disabled ? " disabled" : ""}>`;
+      parts.push(`<span class="inline-edit"><label for="${id}">${esc(a.label)}</label>${field}<button type="button" class="${cls}" data-act="${esc(ref)}"${disabled ? " disabled" : ""}${off ? ` title="${esc(off)}"` : ""}>${term ? "Set in terminal ⌨" : isArmed ? "Confirm save" : "Save"}</button></span>`);
+      return;
+    }
+    const label = a.current ? a.label + " (current)" : isArmed ? "Confirm: " + a.label : a.label + (a.soon ? " (later)" : term ? " ⌨" : "");
+    parts.push(`<button type="button" class="${cls}" data-act="${esc(ref)}"${disabled ? " disabled" : ""}${off ? ` title="${esc(off)}"` : ""}>${esc(label)}</button>`);
+  });
+  if (api && locked && list.some(a => !a.link && !a.soon)) notes.unshift("Locked: enter your password at the top. It unlocks actions for 30 minutes.");
+  const res = result && result.id === it.id && result.kind === kind ? `<div class="result${result.ok ? "" : " err"}" role="status">${esc(result.text)}</div>` : "";
+  return {html: parts.length ? `<div class="acts">${parts.join("")}</div>` : "", notes: notes.map(n => `<p class="act-note">${esc(n)}</p>`).join(""), res};
+}
+function scheduleHtml(it) {
+  const s = it.schedule;
+  if (!s) return "";
+  const c = ctrlsHtml(it, s.ctrls || [], "s");
+  const state = s.state === "on" ? pill("on", "active") : pill("off", "stopped");
+  return `<div class="box"><h3>Schedule</h3>
+    <div class="sched-now">${esc(s.now)} ${state}${s.next ? `<span class="muted" style="font-weight:400;font-size:13px">${esc(s.nextLabel || "Next")}: ${esc(when(s.next))} (${esc(ago(s.next))})</span>` : ""}</div>
+    ${s.src ? `<div class="sched-src">${esc(s.src)}</div>` : ""}
+    ${s.extra && s.extra.length ? `<ul class="sched-extra">${s.extra.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
+    ${c.html}${c.notes}${c.res}</div>`;
+}
+function modelHtml(it) {
+  const s = it.modelBox;
+  if (!s) return "";
+  const c = ctrlsHtml(it, s.ctrls || [], "m");
+  return `<div class="box"><h3>Model</h3><div class="sched-now">${s.now}</div>${s.src ? `<div class="sched-src">${esc(s.src)}</div>` : ""}${c.html}${c.notes}${c.res}</div>`;
+}
+function actsHtml(it) {
+  // No buttons on a read-only copy served by a plain web server: only the action service answers api/ping.
+  if (!api || !(it.acts || []).length) return "";
+  const c = ctrlsHtml(it, it.acts, "a");
+  return `<div class="box"><h3>Actions</h3>${c.html}${c.notes}${c.res}</div>`;
+}
+
+// ---- unlock: the key buys a 30-minute session ----
+function setSession(token, until) {
+  session = token || ""; sessionUntil = until || 0;
+  save_("agent-console-session", session ? {token: session, until: sessionUntil} : {});
+}
+function renderKeybar() {
+  const bar = document.getElementById("keybar");
+  bar.hidden = !api;
+  if (!api) return;
+  const pk = api.passkeys || {}, canPk = pk.available && pkSupported();
+  const runnerDown = api.runner === "down" ? `<span class="key-msg" data-hint="agent-console-runner.service isn't answering: actions are unavailable until it runs again.">Action runner down</span>` : "";
+  if (session) {
+    const mins = Math.max(1, Math.ceil((sessionUntil * 1000 - Date.now()) / 60000));
+    bar.innerHTML = runnerDown + `<span class="unlocked">Unlocked · locks in ${mins} min</span>` +
+      (canPk ? `<button type="button" id="key-addpk" data-hint="Adds a passkey on this device, so next time Touch ID or Face ID unlocks the console. Your password keeps working.">Add Touch ID / Face ID</button>` : "") +
+      `<button type="button" id="key-forget">Lock</button>` + (pkMsg ? `<span class="${pkMsgOk ? "unlocked" : "key-msg"}" role="status">${esc(pkMsg)}</span>` : "");
+  } else {
+    bar.innerHTML = runnerDown + (canPk && pk.count ? `<button type="button" id="key-passkey" class="pk-btn">Touch ID / Face ID</button><span class="muted">or</span>` : "") +
+      `<label for="key-input" class="muted">Password</label><input id="key-input" type="password" autocomplete="current-password" placeholder="unlocks for 30 min"><button type="button" id="key-save">Unlock</button>` +
+      (unlockMsg ? `<span class="key-msg" role="status">${esc(unlockMsg)}</span>` : "");
+  }
+}
+async function unlock() {
+  const input = document.getElementById("key-input"), key = input ? input.value : "";
+  if (!key) return;
+  try {
+    // the session itself is an HttpOnly cookie; the page only keeps its expiry for the countdown
+    const r = await fetch("api/unlock", {method: "POST", headers: {"Content-Type": "application/json", "X-Console-Action": "1"}, body: JSON.stringify({password: key})});
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) { setSession("cookie", j.expires_at); unlockMsg = ""; pkMsg = ""; }
+    else unlockMsg = j.error || "Wrong password.";
+  } catch (err) { unlockMsg = "Could not reach the console service."; }
+  renderKeybar(); renderDetail();
+  if (!session) { const i = document.getElementById("key-input"); if (i) i.focus(); }
+}
+function lock(msg) {
+  if (session) fetch("api/lock", {method: "POST", headers: {"Content-Type": "application/json", "X-Console-Action": "1"}, body: "{}"}).catch(() => {});
+  setSession(); unlockMsg = msg || ""; armed = null; pkMsg = "";
+  renderKeybar(); renderDetail();
+}
+setInterval(() => {
+  if (session && Date.now() >= sessionUntil * 1000) lock("Locked after 30 minutes.");
+  else if (session) renderKeybar();
+}, 15000);
+
+async function runAction(it, a, kind, value) {
+  const label = a.input ? a.label + " → " + value : a.label;
+  busy = true; armed = null; result = {id: it.id, kind, ok: true, text: label + "… working"}; renderDetail();
+  try {
+    const body = {action: a.action, target: a.target};
+    if (value !== undefined && value !== "") body.value = value;
+    const r = await fetch("api/action", {method: "POST", headers: {"Content-Type": "application/json", "X-Console-Action": "1"}, body: JSON.stringify(body)});
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { busy = false; result = null; return lock("Session ended. Unlock again to continue."); }
+    result = {id: it.id, kind, ok: r.ok, text: r.ok ? label + ": done in " + j.took_s + " s." + (j.output ? " " + j.output : " Status refreshes within a minute.") : (j.error || "HTTP " + r.status) + (j.output ? " " + j.output : "")};
+  } catch (err) {
+    result = {id: it.id, kind, ok: false, text: "Could not reach the console service (" + err.message + ")."};
+  }
+  busy = false; renderDetail(); setTimeout(load, 4000);
+}
+function renderCounts() {
+  const n = s => agentItems.filter(i => i.status === s).length;
+  const attn = agentItems.filter(i => ATTN.includes(i.status)).length;
+  const btn = (kind, status, label) => `<button type="button" class="chip countbtn" data-pop="${kind}" aria-haspopup="dialog" aria-expanded="${popKind === kind}"><span class="dot s-${status}"></span>${esc(label)}</button>`;
+  document.getElementById("counts").innerHTML = btn("running", "running", n("running") + " running") +
+    (attn ? btn("attention", "attention", attn + " need a look") : btn("attention", "up", "all fine"));
+  if (popKind) renderPop();
+  const age = Date.now() / 1000 - data.generated;
+  const el = document.getElementById("updated");
+  el.textContent = age > STALE_S ? "Snapshot is " + ago(data.generated).replace(" ago", "") + " old. Collector not running?" : "Updated " + ago(data.generated);
+  el.classList.toggle("stale", age > STALE_S);
+}
+function render(force) {
+  if (!data) return;
+  agentItems = hintify(catalogize(build(data)));
+  items = lifecycle(infisicalize(hintify(view === "schedules" ? catalogize(buildSchedules(data, agentItems))
+    : view === "connections" ? buildConnections(data, agentItems).concat(buildInfisical(agentItems), consoleItems())
+    : agentsMode === "roles" ? catalogize(buildRoles(data)) : agentItems)));
+  if (!items.some(i => i.id === sel[SK()])) sel[SK()] = items[0] && items[0].id;
+  renderTabs(); renderCounts(); renderList(); renderTimeline(); renderRoleGrid();
+  // Don't rebuild the pane under the cursor while someone is typing a new schedule.
+  const f = document.activeElement, main = document.getElementById("main");
+  if (force || !(f && main.contains && main.contains(f) && /^(INPUT|SELECT)$/.test(f.tagName))) renderDetail();
+}
+function select(id, show) {
+  sel[SK()] = id; armed = null;
+  save_("agent-console-sel", sel);
+  history.replaceState(null, "", "#" + encodeURIComponent(id));
+  document.getElementById("app").classList.toggle("show-detail", !!show);
+  renderList(); renderTimeline(); renderRoleGrid(); renderDetail();
+  document.getElementById("main").scrollTop = 0;
+}
+
+document.addEventListener("click", e => {
+  const tab = e.target.closest(".tab");
+  if (tab) return switchView(tab.dataset.view);
+  const sub = e.target.closest(".subtab");
+  if (sub) return setAgentsMode(sub.dataset.mode);
+  const go = e.target.closest("[data-goto]");
+  if (go) {
+    const id = go.dataset.goto;
+    switchView(VIEW_OF(id));
+    if (VIEW_OF(id) === "agents") setAgentsMode(MODE_OF(id));
+    return select(id, true);
+  }
+  const row = e.target.closest(".row");
+  if (row) return select(row.dataset.id, true);
+  const tl = e.target.closest("[data-sel]");
+  if (tl) return select(tl.dataset.sel, true);
+  if (e.target.id === "back") { document.getElementById("app").classList.remove("show-detail"); return; }
+  if (e.target.id === "key-save") return unlock();
+  if (e.target.id === "key-forget") return lock();
+  const actBtn = e.target.closest("button[data-act]");
+  if (actBtn && !busy) {
+    const ref = actBtn.dataset.act, m = ref.match(/^(.*):([asm])(\d+)$/);
+    const it = m && items.find(i => i.id === m[1]);
+    const lists = it ? {s: it.schedule && it.schedule.ctrls, m: it.modelBox && it.modelBox.ctrls, a: it.acts} : {};
+    const a = it && (lists[m[2]] || [])[+m[3]];
+    if (!a || !a.action) return;
+    const value = a.input ? String(inputVals[ref] ?? a.input.value ?? "").trim() : a.value;
+    if (viaTerminal(a)) return openTerminal(it, a, m[2], value);   // the terminal asks for confirmation itself
+    if (armed === ref) return runAction(it, a, m[2], value);
+    armed = ref; renderDetail();
+    setTimeout(() => { if (armed === ref) { armed = null; renderDetail(); } }, 5000);
+    return;
+  }
+  const b = e.target.closest("button[data-copy]");
+  if (b) {
+    const text = b.dataset.copy;
+    const done = () => { b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy", 1500); };
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(done, () => {
+      const r = document.createRange(); r.selectNodeContents(b.previousElementSibling);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Selected";
+    });
+  }
+});
+document.addEventListener("keydown", e => {
+  if (e.target.id === "key-input" && e.key === "Enter") return unlock();
+  const tab = e.target.closest && e.target.closest(".tab");
+  if (tab && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+    const i = VIEWS.findIndex(v => v.id === view), n = VIEWS[(i + (e.key === "ArrowRight" ? 1 : -1) + VIEWS.length) % VIEWS.length];
+    e.preventDefault(); return switchView(n.id, true);
+  }
+  const tl = e.target.closest && e.target.closest("[data-sel]");
+  if (tl && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); select(tl.dataset.sel, true); }
+});
+document.addEventListener("pointerover", e => { if (e.target.closest && e.target.closest(".tl-scroll")) tlTip(e); });
+document.addEventListener("pointerout", e => { if (e.target.closest && e.target.closest("[data-tip]")) document.querySelectorAll(".tl-tip").forEach(t => t.hidden = true); });
+let resizeT;
+window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(renderTimeline, 150); });
+
+async function load() {
+  try {
+    const r = await fetch("status.json?t=" + Date.now(), {cache: "no-store"});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    data = await r.json();
+    render();
+  } catch (err) {
+    const el = document.getElementById("updated");
+    el.textContent = "Could not load status.json (" + err.message + ")";
+    el.classList.add("stale");
+  }
+}
+async function ping() {
+  // Only the action service answers api/ping; on a read-only copy served by a plain web server it 404s and no buttons show.
+  try {
+    const r = await fetch("api/ping", {cache: "no-store"});
+    api = r.ok ? await r.json() : null;
+  } catch (e) { api = null; }
+  // the server knows whether the session cookie is still live (a restart ends all sessions)
+  if (api && api.unlocked_until) setSession("cookie", api.unlocked_until); else setSession();
+  renderKeybar(); if (data) renderDetail();
+}
+renderTabs();
+ping();
+load();
+setInterval(load, POLL_MS);
+setInterval(() => data && renderCounts(), 15000);
+
+// ---- Agents → Roles mode: role templates and the project × role grid ----
+// Roles are templates the dispatcher instantiates as one headless session per step; settings are shared
+// by all projects (agent_backend.py, dispatch.py), the sessions belong to each project.
+const ROLE_DEFS = [
+  {key: "impl", name: "Implement", group: "Pipeline roles", turns: "150", time: "90 min", code: "impl",
+    sub: "incl. rework, CI fixes, tasks",
+    what: "Builds the roadmap item or task issue on a branch and opens a PR.",
+    how: ["Runs for the next unchecked roadmap item or a task issue.", "The same role reworks a PR after a failed review, fixes failing CI, and resumes after you answer a blocker; the logs record all of these as impl.", "2 failed sessions on one item → blocker issue and the project pauses."],
+    conns: ["GitHub", "ntfy", "agent-memory"]},
+  {key: "arch", name: "Architecture", group: "Pipeline roles", turns: "150", time: "90 min", code: "arch",
+    sub: "projects with an arch prompt",
+    what: "Writes an architecture document for roadmap items tagged [arch].",
+    how: ["Only dispatchers that carry an architecture prompt run it.", "Other projects treat an [arch] item as a normal implement step."],
+    conns: ["GitHub"]},
+  {key: "qa", name: "Correctness review", group: "Pipeline roles", turns: "60", time: "90 min", code: "qa",
+    sub: "after each PR",
+    what: "Checks the PR against the item and the tests, then approves it or asks for changes.",
+    how: ["A failed review starts a rework (an implement session) and invalidates earlier approvals.", "2 failed review rounds on one PR → blocker issue and pause."],
+    conns: ["GitHub"]},
+  {key: "adv", name: "Adversarial review", group: "Pipeline roles", turns: "60", time: "90 min", code: "adv",
+    sub: "before merge",
+    what: "Tries to break the PR before it is merged: edge cases, regressions, unsafe changes.",
+    how: ["Runs after the correctness review approves.", "In both mode it runs on the other model than implement, so the review is cross-model."],
+    conns: ["GitHub"]},
+  {key: "verify", name: "Delivery check", group: "Pipeline roles", turns: "60", time: "90 min", code: "verify",
+    sub: "after merge",
+    what: "After the merge, checks that what was delivered does what the item asked.",
+    how: ["Short session; a failed check is reported like a failed session."],
+    conns: ["GitHub"]},
+  {key: "overseer", name: "Overseer", group: "Loop-wide roles", turns: "80", time: "60 min", code: "overseer",
+    sub: "daily report",
+    what: "Assesses all project repos and posts the report on the Status report issue in the ops repo.",
+    how: ["Runs at most once a day, only when no worker is mid-session; reads all memory scopes.", "Its logs live in the ops repo, so the grid shows it in that row."],
+    conns: ["GitHub", "agent-memory"]},
+  {key: "chat", name: "Telegram chat", group: "Loop-wide roles", turns: "80", time: "15 min / turn", price: "$3 per turn", code: "chat",
+    sub: "on demand · not logged yet", notLogged: true,
+    what: "Interactive /chat sessions from the Telegram bridge, in a separate git worktree of the repo you name; also turns plain-language messages into actions.",
+    how: ["One turn at a time; extra messages queue. Plain follow-ups continue the session, /end closes it.", "Its sessions aren't written to the project logs yet, so there are no counts here; that needs a small change in the bridge."],
+    conns: ["Telegram", "GitHub"]},
+];
+// The private catalog can replace a role's sub, what and how with this site's wording.
+const roleDefs = () => ROLE_DEFS.map(r => Object.assign({}, r, (CAT().roles || {})[r.key] || {}));
+const GRID_ROLES = ["impl", "arch", "qa", "adv", "verify", "overseer"];
+const ROLE_KINDS = {"Pipeline roles": "one session per step", "Loop-wide roles": ""};
+const heat = n => n >= 6 ? 3 : n >= 3 ? 2 : n >= 1 ? 1 : 0;
+function modelFor(role, backend, pins) {
+  const p = (pins || (data && data.agent_runner.role_pins) || {})[role];
+  if (p) return p === "claude" ? "claude" : "mistral";
+  return roleModel(role, backend);
+}
+
+function roleModelHint(r, eff, be, pin) {
+  const what = eff === "claude" ? "Claude Code CLI (claude -p) with its default model" + (CAT().claude_model ? ", " + CAT().claude_model : "") : "Mistral through the vibe CLI";
+  return `${r.name} runs on ${what}. ` + (pin ? `Pinned for this role (AGENT_BACKEND_${r.key.toUpperCase()}=${pin}).`
+    : `It follows the ${be || "?"} mode` + (be === "both" ? " (both: Mistral implements, Claude reviews and verifies)." : ".")) + " Change it under Model for this role.";
+}
+function roleRepoHint(r, per) {
+  if (r.key === "chat") return "Telegram /chat works in a separate git worktree of the repo you name; sessions aren't logged yet.";
+  if (!per.length) return "Hasn't run in any repo yet.";
+  const owner = SITE().github_owner, acct = CAT().agent_account;
+  return `${r.name} sessions work in ` + per.map(x => `${owner ? owner + "/" : ""}${x.repo} (${x.s.week} this week, ${x.s.total} total)`).join(", ") +
+    ". They push branches, open PRs and comment as " + (acct || "the agents' GitHub account") + ".";
+}
+function subnavHtml() {
+  if (view !== "agents") return "";
+  const b = (m, l) => `<button type="button" role="tab" class="subtab" data-mode="${m}" aria-selected="${agentsMode === m}">${l}</button>`;
+  return `<div class="subnav" role="tablist" aria-label="Agents view">${b("location", "By location")}${b("roles", "Roles")}</div>`;
+}
+function setAgentsMode(m) {
+  if (m === agentsMode) return;
+  agentsMode = m; armed = null; result = null;
+  save_("agent-console-agents-mode", m);
+  render(true);
+}
+
+function buildRoles(d) {
+  const ar = d.agent_runner, be = ar.backend, pins = ar.role_pins || {}, lim = ar.limits || {};
+  const price = lim.max_price ? "$" + lim.max_price : "$10 (default)";
+  const P = (SITE().paths || {}).projects || "projects", R = CT().runner;
+  return roleDefs().map(r => {
+    const per = ar.workers.map(w => ({repo: w.repo, s: (w.roles || {})[r.key]})).filter(x => x.s);
+    const week = per.reduce((a, x) => a + x.s.week, 0), total = per.reduce((a, x) => a + x.s.total, 0);
+    const cost = per.reduce((a, x) => a + (x.s.cost_week || 0), 0), fails = per.reduce((a, x) => a + (x.s.fails_week || 0), 0);
+    const running = per.some(x => x.s.running);
+    const lastAll = per.map(x => Object.assign({repo: x.repo}, x.s.last)).sort((a, b) => b.start - a.start)[0];
+    const recent = per.flatMap(x => x.s.recent.map(s => Object.assign({repo: x.repo}, s))).sort((a, b) => b.start - a.start).slice(0, 6);
+    const eff = modelFor(r.key, be, pins), modeModel = roleModel(r.key, be), pin = pins[r.key];
+    const status = r.notLogged ? (ar.bridge.running ? "up" : "dormant") : running ? "running" : fails && lastAll && lastAll.exit ? "attention" : week ? "up" : "dormant";
+    const modelTxt = eff ? MODEL[eff] : "Claude or Mistral";
+    const modeTxt = be ? `follows the ${be} mode` : "mode unknown";
+    return {
+      id: "role-" + r.key, lids: ar.workers.map(w => "role:" + w.repo + ":" + r.key), section: r.group, name: r.name, status,
+      sub: modelTxt + (pin ? " (pinned)" : "") + " · " + (r.notLogged ? "not logged yet" : week + " this week · " + r.sub),
+      time: lastAll ? lastAll.start : null, where: R + " · role " + r.code,
+      head: r.what,
+      tags: {cadence: r.key === "overseer" ? ["sched", "≤ once a day"] : r.key === "chat" ? ["on", "on demand"] : ["sched", "per step"],
+        models: eff ? [[eff, MODEL[eff], roleModelHint(r, eff, be, pin)]] : [["claude", "Claude"], ["mistral", "Mistral"]], conns: r.conns,
+        connHint: {"GitHub": roleRepoHint(r, per)}},
+      modelBox: {
+        now: `${pill(eff || "claude", modelTxt)} <span class="muted" style="font-weight:400;font-size:13px">${esc(pin ? "pinned with AGENT_BACKEND_" + r.key.toUpperCase() + "=" + pin : modeTxt + (modeModel ? " → " + MODEL[modeModel] : ""))}</span>`,
+        src: "agent_backend.py: AGENT_BACKEND_" + r.key.toUpperCase() + " pins this role; without it the role follows AGENT_BACKEND" + (be === "both" ? " (in both mode the other model stays the fallback)" : ""),
+        ctrls: [{label: "Model for this role", action: "role-model", target: r.key,
+          input: {type: "select", value: pin || "default", options: [["default", "Follow the mode" + (modeModel ? " (" + MODEL[modeModel] + ")" : "")], ["claude", "Always Claude"], ["vibe", "Always Mistral"]]},
+          note: `Saving updates ${R}'s Infisical template and recreates ${R}; running sessions stop gently and resume on the next tick.`}]},
+      how: r.how,
+      body: `<div class="facts">${fact("Turn limit", esc(r.turns))}${fact("Time limit", esc(r.time))}${fact("Price cap", esc(r.price || price + " per session"))}` +
+        (r.notLogged ? "" : `${fact("Sessions this week", week + " of " + total + " total")}${fact("Cost this week", usd(cost))}${fact("Failed this week", fails)}`) + `</div>` +
+        (r.notLogged ? "" : `<div><h3>Per project</h3><div class="tablewrap"><table><thead><tr><th>Project</th><th>This week</th><th>Total</th><th>Last run</th><th>Result</th><th>Cost 7 d</th></tr></thead><tbody>` +
+          ar.workers.map(w => {
+            const s = (w.roles || {})[r.key];
+            if (!s) return `<tr><td><button type="button" class="goto" data-goto="w-${esc(w.repo)}">${esc(w.repo)}</button></td><td colspan="5" class="muted">never ran here</td></tr>`;
+            const l = s.last;
+            return `<tr><td><button type="button" class="goto" data-goto="w-${esc(w.repo)}">${esc(w.repo)}</button></td><td>${s.week}</td><td>${s.total}</td><td>${esc(when(l.start))}</td>` +
+              `<td>${s.running ? '<span class="ok">running</span>' : l.exit === 0 ? '<span class="ok">ok</span>' : l.exit == null ? "—" : `<span class="bad">exit ${esc(l.exit)}</span>`}</td><td>${usd(s.cost_week)}</td></tr>`;
+          }).join("") + `</tbody></table></div></div>` +
+          `<div><h3>Recent sessions</h3>${recent.length ? `<div class="tablewrap"><table><thead><tr><th>Started</th><th>Project</th><th>Backend</th><th>Took</th><th>Result</th><th>Cost</th></tr></thead><tbody>` +
+            recent.map(s => `<tr><td>${esc(when(s.start))}</td><td>${esc(s.repo)}</td><td>${esc(s.backend)}</td><td>${s.running ? '<span class="ok">running</span>' : dur(s.start, s.end)}</td>` +
+              `<td>${s.running ? "—" : s.exit === 0 ? '<span class="ok">ok</span>' : `<span class="bad">exit ${esc(s.exit)}</span>`}</td><td>${usd(s.cost)}</td></tr>`).join("") + `</tbody></table></div>` : '<p class="note">No sessions yet.</p>'}</div>`),
+      links: [["Ops repository", gh(OPS()), "Role prompts, backend modes and pins"]],
+      cmds: r.notLogged ? [["Bridge lines in the log", `docker logs --tail 300 ${R} | grep -i chat`]] : [["Latest logs of this role", `ls -t ${P}/*/dispatcher/logs/*-${r.key}.* | head`]],
+    };
+  });
+}
+
+function renderRoleGrid() {
+  const box = document.getElementById("rolegrid");
+  box.hidden = !(view === "agents" && agentsMode === "roles");
+  if (box.hidden || !data) return;
+  const ar = data.agent_runner, be = ar.backend, pins = ar.role_pins || {};
+  const defs = GRID_ROLES.map(k => roleDefs().find(r => r.key === k));
+  const cell = (repo, r, s) => {
+    if (!s) return `<td class="rg-none" aria-label="${esc(repo + ", " + r.name + ": never ran")}">—</td>`;
+    const l = s.last, lastTxt = l ? (s.running ? "running now" : (l.exit === 0 ? "last ok " : l.exit == null ? "last " : "last failed ") + ago(l.start)) : "";
+    const marks = (s.running ? '<i class="rg-run" title="running"></i>' : "") + (s.fails_week ? '<i class="rg-fail" title="failed this week"></i>' : "");
+    return `<td><button type="button" class="rg-cell h${heat(s.week)}${"role-" + r.key === sel["agents:roles"] ? " sel" : ""}" data-goto="role-${r.key}"` +
+      ` data-tip="${esc(s.week + " this week · " + s.total + " total")}" data-tip2="${esc(repo + " · " + r.name + " · " + lastTxt + (s.cost_week ? " · " + usd(s.cost_week) + " this week" : ""))}"` +
+      ` aria-label="${esc(repo + ", " + r.name + ": " + s.week + " sessions this week, " + s.total + " total, " + lastTxt)}">` +
+      `<b>${s.week}</b><small>/ ${s.total}</small>${marks}</button></td>`;
+  };
+  const totals = defs.map(r => ar.workers.reduce((a, w) => {
+    const s = (w.roles || {})[r.key];
+    return s ? {week: a.week + s.week, total: a.total + s.total, cost: a.cost + (s.cost_week || 0)} : a;
+  }, {week: 0, total: 0, cost: 0}));
+  document.getElementById("rg-table").innerHTML = `<table class="rg"><caption class="sr-only">Sessions per project and role: this week / total</caption><thead><tr><th scope="col">Project</th>` +
+    defs.map(r => { const m = modelFor(r.key, be, pins); return `<th scope="col"><button type="button" class="rg-head" data-goto="role-${r.key}">${esc(r.name)}</button>${m ? pill(m, MODEL[m]) : ""}</th>`; }).join("") + `</tr></thead><tbody>` +
+    ar.workers.map(w => `<tr><th scope="row"><button type="button" class="rg-head" data-goto="w-${esc(w.repo)}">${esc(w.repo)}</button></th>` +
+      defs.map(r => cell(w.repo, r, (w.roles || {})[r.key])).join("") + `</tr>`).join("") +
+    `<tr class="rg-total"><th scope="row">All projects</th>${totals.map(t => `<td><b>${t.week}</b><small>/ ${t.total}</small>${t.cost ? `<span class="rg-cost">${usd(t.cost)}</span>` : ""}</td>`).join("")}</tr></tbody></table>`;
+}
+
+// ---- lifecycle: "new" tags, a Decommissioned group for things that are off, greyed History for removed ones ----
+const STATUS_LABEL = {done: "done · idle", off: "off", history: "removed"};
+const OFF_REASON = Object.fromEntries(["pause", "resume", "stop-session"].map(a =>
+  [a, "Needs a supervisor with pause flags: update the dispatcher and rebuild the runner container."]));
+const NEW_S = 7 * 86400;
+const HIST_KINDS = {"agents:location": ["container", "project", "chat", "timer"], "agents:roles": ["role"], schedules: ["workflow", "cron", "timer"], connections: ["template", "secret"]};
+const HIST_PREFIX = {"agents:location": "hist-", "agents:roles": "role-hist-", schedules: "sch-hist-", connections: "cn-hist-"};
+const KIND_LABEL = {container: "container", project: "project", chat: "chat", timer: "systemd timer", role: "role", workflow: "GitHub workflow", cron: "cron job", template: "Infisical template", secret: "Infisical key"};
+function isNewLid(lid) {
+  const e = data && data.ledger && data.ledger[lid];
+  return !!(e && e.first_seen && Date.now() / 1000 - e.first_seen < NEW_S);
+}
+function lifecycle(list) {
+  const now = Date.now() / 1000, key = SK();
+  for (const it of list) {
+    it.isNew = it.lid ? isNewLid(it.lid) : (it.lids || []).some(isNewLid);
+    if (it.status === "off") { it.section = "Decommissioned"; it.lifecycle = true; }
+  }
+  const kinds = HIST_KINDS[key] || [], gone = Object.entries((data && data.ledger) || {})
+    .filter(([, e]) => e.missing_since && now - e.missing_since >= (data.removed_after_s || 120) && kinds.includes(e.kind))
+    .sort((a, b) => b[1].missing_since - a[1].missing_since);
+  const hist = gone.map(([lid, e]) => ({
+    id: HIST_PREFIX[key] + lid, section: "History", lifecycle: true, name: e.name, status: "history",
+    sub: "removed " + new Date(e.missing_since * 1000).toLocaleDateString([], {day: "numeric", month: "short", year: "numeric"}) + " · " + (KIND_LABEL[e.kind] || e.kind) + " · " + e.where,
+    time: e.missing_since, where: "history · " + (KIND_LABEL[e.kind] || e.kind), rowTags: false,
+    head: "Removed from the server. Kept here with what the console last knew about it.",
+    body: `<div class="facts">${fact("Kind", esc(KIND_LABEL[e.kind] || e.kind))}${fact("Where", esc(e.where))}${fact("Last known", esc(e.detail || "—"))}` +
+      `${fact("First seen", esc(e.first_seen ? when(e.first_seen) : "before the console"))}${fact("Last seen", esc(when(e.last_seen)))}${fact("Removed", esc(when(e.missing_since)))}</div>`,
+    cmds: []}));
+  const order = s => s === "History" ? 2 : s === "Decommissioned" ? 1 : 0;
+  return [...list, ...hist].map((it, i) => [it, i]).sort((a, b) => order(a[0].section) - order(b[0].section) || a[1] - b[1]).map(x => x[0]);
+}
+
+// ---- Infisical: where each key lives (names only, read from the templates) ----
+// Template names default to the container (or project) they render for; the catalog can say otherwise.
+function infUsers() {
+  const ws = ((data && data.agent_runner && data.agent_runner.workers) || []).map(w => "w-" + w.repo);
+  const out = {[CT().runner]: ["agent-runner", ...ws, "overseer", "bridge", "memory"], [CT().jobbot]: ["job-bot", "gmail", "jb-chat"], [CT().claude]: ["claude-agent"]};
+  for (const w of ws) out[w.slice(2)] = [w];
+  return Object.assign(out, CAT().inf_users || {});
+}
+function infOfItem(id) {
+  const m = CAT().inf_of_item;   // when the catalog lists it, that list is complete
+  if (m) return m[id] || null;
+  const readable = data && data.infisical && data.infisical.readable;
+  const hits = Object.entries(infUsers()).filter(([t, us]) => us.includes(id) && (!readable || infT(t))).map(([t]) => t);
+  return hits.length ? hits : null;
+}
+// credential -> [template, key] pairs it is expected under (catalog), and the console's own schedule settings
+const connInf = key => (CAT().conn_inf || {})[key];
+const schInf = id => Object.assign({"sch-jobbot": [[CT().jobbot, "RUN_AT"]], "sch-gmail": [[CT().jobbot, "EMAIL_CHECK_INTERVAL_S"]]}, CAT().sch_inf || {})[id];
+const infProject = () => CAT().infisical_project || "your project";
+const infTplDir = () => (SITE().paths || {}).infisical_templates || "the templates folder";
+const infUnit = () => SITE().infisical_unit || "infisical-agent";
+const infTemplates = () => (data && data.infisical && data.infisical.templates) || [];
+const infT = name => infTemplates().find(t => t.name === name);
+const RENDER_DOT = {ok: "up", empty: "attention", missing: "down"};
+function infKeyState(tname, key) {
+  const t = infT(tname);
+  if (!t) return {found: false};
+  if (t.secrets.includes(key)) return {found: true, secret: true, t, rendered: t.rendered[key]};
+  const s = t.settings.find(x => x.key === key);
+  return s ? {found: true, secret: false, t, value: s.value} : {found: false, t};
+}
+function keyChip(t, key) {
+  const r = t.rendered[key];
+  return `<button type="button" class="keychip" data-copykey="${esc(key)}" title="${esc(r ? "rendered: " + r + " · click to copy the name" : "click to copy the name")}">` +
+    `${r ? `<span class="dot s-${RENDER_DOT[r] || "unknown"}"></span>` : ""}${esc(key)}</button>`;
+}
+function folderLabel(t) { return t.folders.length ? t.folders.join(", ") : "/" + t.name; }
+function secretsBox(it) {
+  if (!data || !data.infisical) return "";
+  if (it.inf) {
+    const ts = it.inf.map(infT).filter(Boolean);
+    if (!ts.length) return data.infisical.readable ? "" : `<div class="box"><h3>Secrets & settings</h3><p class="note">The collector can't read the Infisical templates yet.</p></div>`;
+    return `<div class="box"><h3>Secrets & settings · Infisical</h3>` + ts.map(t =>
+      `<div class="inf-block"><div class="sched-src">${esc(folderLabel(t))} → ${esc(t.dst || "?")} · <button type="button" class="goto" data-goto="cn-inf-${esc(t.name)}">open folder →</button></div>` +
+      `<div class="keyrow"><span class="lab2">Secrets</span>${t.secrets.map(k => keyChip(t, k)).join("") || '<span class="muted">none</span>'}</div>` +
+      `<div class="keyrow"><span class="lab2">Settings</span>${t.settings.map(s => `<button type="button" class="keychip plain" data-copykey="${esc(s.key)}">${esc(s.key)}${s.value != null ? `<b>=${esc(s.value)}</b>` : ""}</button>`).join("") || '<span class="muted">none</span>'}</div></div>`).join("") +
+      `<p class="act-note">Names only; values never leave the server. A green dot means the key reached the rendered file.</p></div>`;
+  }
+  if (it.infKeys) {
+    const rows = it.infKeys.map(([tn, k]) => {
+      const st = infKeyState(tn, k);
+      const where = st.t ? folderLabel(st.t) : "/" + tn;
+      const state = !data.infisical.readable ? "templates not readable yet" : !st.found ? "not found in this template" : st.secret ? "secret · rendered " + (st.rendered || "?") : "setting" + (st.value != null ? " = " + st.value : "");
+      return `<tr><td><button type="button" class="keychip" data-copykey="${esc(k)}">${st.secret && st.rendered ? `<span class="dot s-${RENDER_DOT[st.rendered] || "unknown"}"></span>` : ""}${esc(k)}</button></td>` +
+        `<td>${esc(where)}</td><td class="${st.found ? "" : "warn"}">${esc(state)}</td><td><button type="button" class="goto" data-goto="cn-inf-${esc(tn)}">folder →</button></td></tr>`;
+    }).join("");
+    return `<div class="box"><h3>In Infisical</h3><div class="tablewrap"><table><thead><tr><th>Key</th><th>Folder</th><th>State</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }
+  return "";
+}
+function buildInfisical(agents) {
+  const inf = data && data.infisical;
+  if (!inf) return [];
+  const A = Object.fromEntries(agents.map(i => [i.id, i]));
+  if (!inf.readable) return [{id: "cn-inf-none", section: "Infisical folders", name: "Templates not readable", status: "unknown", sub: "the collector can't read " + infTplDir(),
+    where: "Infisical", head: "The collector reads the templates for key names only. Check that its user can read the folder.", tags: {conns: ["Infisical"]}, links: [Lk("infisical")], cmds: [["Templates", "ls -l " + infTplDir()]]}];
+  return inf.templates.map(t => {
+    const bad = Object.values(t.rendered).filter(r => r !== "ok").length;
+    const users = (infUsers()[t.name] || []).filter(u => A[u]);
+    return {id: "cn-inf-" + t.name, lid: "template:" + t.name, section: "Infisical folders", name: folderLabel(t),
+      status: inf.agent !== "active" && inf.agent !== "unknown" ? "down" : bad ? "attention" : "up",
+      sub: `${t.secrets.length} secret${t.secrets.length === 1 ? "" : "s"} · ${t.settings.length} setting${t.settings.length === 1 ? "" : "s"} → ${(t.dst || "?").split("/").slice(-3).join("/")}`,
+      where: "Infisical · " + infProject(), head: `Rendered into ${t.dst || "?"} every 60 s by ${infUnit()}; the reload hook recreates the app only when the rendered content changes.` + (users.length ? "" : " Not used by an agent (another app on the server)."),
+      tags: {conns: ["Infisical"]},
+      body: `<div class="facts">${fact("Renders to", esc(t.dst || "?"))}${fact("Template changed", esc(when(t.changed)))}${fact("Last render", esc(when(t.rendered_at)))}${fact("Infisical agent", esc(inf.agent))}${bad ? fact("Not rendered", `<span class="warn">${bad} key${bad > 1 ? "s" : ""}</span>`) : ""}</div>` +
+        `<div><h3>Secrets</h3><div class="keyrow">${t.secrets.map(k => keyChip(t, k)).join("") || '<span class="muted">none</span>'}</div></div>` +
+        `<div><h3>Settings</h3><div class="keyrow">${t.settings.map(s => `<button type="button" class="keychip plain" data-copykey="${esc(s.key)}">${esc(s.key)}${s.value != null ? `<b>=${esc(s.value)}</b>` : ""}</button>`).join("") || '<span class="muted">none</span>'}</div></div>` +
+        (users.length ? `<div><h3>Used by</h3><div class="tags">${users.map(u => `<button type="button" class="goto" data-goto="${esc(u)}">${esc(A[u].name)}</button>`).join("")}</div></div>` : ""),
+      how: ["<b>Rotate a key:</b> create the new value at the provider · Infisical → " + esc(infProject()) + " → <code>" + esc(folderLabel(t)) + "</code> → edit the key · wait up to 60 s (or Re-render now): the app is recreated with it · revoke the old value at the provider.",
+        "<b>Change a setting:</b> edit the template line (or use the console's own controls for RUN_AT, Gmail interval, backend and role models); never the rendered .env, which is overwritten.",
+        "Click a key to copy its name. Values are never read into the console."],
+      acts: [{label: "Re-render now", action: "infisical-rerender", target: "all", note: "Restarts the Infisical agent: every template renders again within a minute; only apps whose content changed are recreated."}],
+      links: [Lk("infisical")], cmds: [["Agent log", `journalctl -u ${infUnit()} -n 50 --no-pager`], ["Template", "ls -l " + infTplDir() + "/" + t.name + ".tmpl"]]};
+  });
+}
+function infisicalize(list) {
+  for (const it of list) {
+    let infTag = false;
+    const inf = view === "agents" && agentsMode === "location" && infOfItem(it.id);
+    if (inf) { it.inf = inf; infTag = true; }
+    const ck = it.id.startsWith("cn-") && !it.id.startsWith("cn-inf-") && connInf(it.id.slice(3));
+    if (ck) { it.infKeys = ck; infTag = true; }
+    if (schInf(it.id)) { it.infKeys = schInf(it.id); infTag = true; }
+    if (infTag && it.tags && !(it.tags.conns || []).includes("Infisical")) it.tags = Object.assign({}, it.tags, {conns: [...(it.tags.conns || []), "Infisical"]});
+  }
+  return list;
+}
+document.addEventListener("click", e => {
+  const k = e.target.closest && e.target.closest("[data-copykey]");
+  if (!k) return;
+  (navigator.clipboard ? navigator.clipboard.writeText(k.dataset.copykey) : Promise.reject()).catch(() => {});
+  k.classList.add("copied");
+  setTimeout(() => k.classList.remove("copied"), 1200);
+});
+
+// ---- terminal for changes that need sudo ----
+// When the console can't run an action itself (no sudo rule for it), the button opens the console
+// terminal (ttyd + term.py) with the action and values prefilled; you confirm there and sudo asks
+// for your password. term.py re-checks everything against its own allow-list.
+const TERM_ACTIONS = new Set(["overwatch-run", "overwatch-timer", "overwatch-calendar", "overwatch-accept"]);
+const viaTerminal = a => !!(api && api.term && a.action && !a.soon && !api.actions[a.action] && TERM_ACTIONS.has(a.action));
+function termUrl(a, value) {
+  const args = [a.action, a.target, ...(value !== undefined && value !== "" ? [value] : [])];
+  return `https://${HOST}:${api.term.port}/?` + args.map(x => "arg=" + encodeURIComponent(x)).join("&");
+}
+function openTerminal(it, a, kind, value) {
+  const url = termUrl(a, value), w = window.open(url, "_blank", "noopener");
+  result = {id: it.id, kind, ok: true, text: w === null
+    ? "Your browser blocked the new tab. Open the terminal here: " + url
+    : "Terminal opened in a new tab: confirm there and type your sudo password. The console shows the change within a minute."};
+  renderDetail();
+}
+
+// ---- header counts: click to see what is running / needs a look, and jump there ----
+let popKind = null;
+const POP_TITLE = {running: "Running now", attention: "Needs a look"};
+function popItems(kind) {
+  return agentItems.filter(i => kind === "running" ? i.status === "running" : ATTN.includes(i.status));
+}
+function renderPop() {
+  const pop = document.getElementById("count-pop");
+  if (!popKind) { pop.hidden = true; return; }
+  const list = popItems(popKind);
+  pop.innerHTML = `<div class="pop-head"><b>${POP_TITLE[popKind]}</b><button type="button" class="pop-close" id="pop-close" aria-label="Close">✕</button></div>` +
+    (list.length ? `<div class="pop-list">` + list.map(i =>
+      `<button type="button" class="pop-item s-${i.status}" data-goto="${esc(i.id)}"><span class="dot"></span>` +
+      `<span class="pop-name">${esc(i.name)}</span><span class="pop-time">${esc(i.time ? ago(i.time) : "")}</span>` +
+      `<span class="pop-sub">${esc(i.where)} · ${esc(i.sub)}</span></button>`).join("") + `</div>`
+      : `<p class="pop-empty">${popKind === "running" ? "Nothing is running right now." : "Nothing needs a look."}</p>`);
+  pop.hidden = false;
+}
+function setPop(kind) {
+  popKind = kind;
+  renderCounts();
+  renderPop();
+  if (kind) { const first = document.querySelector("#count-pop .pop-item, #count-pop .pop-close"); if (first) first.focus(); }
+}
+document.addEventListener("click", e => {
+  if (!e.target.closest) return;
+  const b = e.target.closest(".countbtn");
+  if (b) return setPop(popKind === b.dataset.pop ? null : b.dataset.pop);
+  if (e.target.closest("#pop-close") || e.target.closest("#count-pop [data-goto]")) return setPop(null);
+  if (popKind && !e.target.closest("#count-pop")) setPop(null);
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && popKind) { const k = popKind; setPop(null); const b = document.querySelector(`.countbtn[data-pop="${k}"]`); if (b) b.focus(); } });
+
+// ---- hover hints: what a tag means, which exact model sits behind a pill ----
+const STATUS_HINT = {
+  running: "Working right now (a session, a run job or an active chat).",
+  up: "Fine: running, or active within its schedule.",
+  done: "Roadmap finished. The worker still checks GitHub every 5 minutes and starts on any new task issue.",
+  idle: "Nothing to do right now; checks again on its next tick.",
+  blocked: "Waiting for your answer on a blocker issue.", paused: "Paused after hitting the API quota; resumes by itself.",
+  attention: "Needs a look: something failed or isn't rendered.", failed: "The last run failed.", down: "Should be running but isn't.",
+  off: "On the server but stopped (by you or on purpose): see Decommissioned.", history: "Removed from the server; kept as history.",
+  dormant: "Idle or not in use.", unknown: "The console couldn't read its state.",
+};
+const CADENCE_HINT = {
+  "always on": "Runs continuously; Docker restarts it if it stops (restart: unless-stopped).",
+  "5-min ticks": "The worker checks GitHub every 5 minutes and runs sessions back to back while there is work.",
+  "≤ once a day": "At most once every 24 hours, and only when no worker is mid-session.",
+  "per step": "One headless session per pipeline step, started by the project's worker.",
+  "on demand": "Runs only when you message it.", "long-running": "A process inside the runner container that stays up.",
+  "GitHub cron": "GitHub Actions starts it on a cron schedule (UTC) and files a run issue the worker executes.",
+  "paused": "Paused by you: the supervisor keeps this worker stopped until you resume it.",
+  "app decommissioned": "The app is retired; the project, its worker and its scheduled pipeline are not.",
+  "new": "First seen by the console in the last 7 days.",
+};
+// Generic hints; the private catalog adds this site's wording (conn_hint, model_hint, item_model_hint).
+const CONN_HINT = {
+  "GitHub": "Issues, PRs and Actions in your repos; the workers act through the agents' GitHub account.",
+  "Telegram": "Telegram Bot API: each bot has its own token and answers only your chat.",
+  "claude.ai": "Your Claude subscription: Remote Control, the CLI login, usage limits shared with your chats.",
+  "Infisical": "Its keys live in Infisical and are rendered into the app's .env; see the Secrets & settings box.",
+  "agent-memory": "Scoped memory inside the runner container (loopback only).", "local only": "No network connection: loopback inside the runner container.",
+};
+const MODEL_HINT = {
+  claude: "Claude through the Claude Code CLI (claude -p) on your subscription, with the CLI's default model.",
+  mistral: "Mistral through the vibe CLI, pay per token (MISTRAL_API_KEY).",
+};
+const connHint = name => (CAT().conn_hint || {})[name] || CONN_HINT[name];
+const modelHint = cls => (CAT().model_hint || {})[cls] || MODEL_HINT[cls];
+const itemModelHint = id => (CAT().item_model_hint || {})[id];
+function pillHint(cls, label) {
+  if (cls === "claude" || cls === "mistral") return modelHint(cls);
+  return CADENCE_HINT[label] || (/^every|hourly|daily|weekly|monthly|Mon–Fri/i.test(label) ? "Schedule: open the item for the exact time and where it's defined." : "");
+}
+function hintify(list) {
+  for (const it of list) {
+    const key = itemModelHint(it.id) || (CAT().item_model_label || {})[it.id] ? it.id : it.id.startsWith("chat-") ? "claude-agent" : it.id.startsWith("sch-ow-") ? it.id.slice(4) : null;
+    const h = key && itemModelHint(key);
+    const labels = CAT().item_model_label || {}, lab = labels[it.id] || (it.id.startsWith("sch-ow-") ? labels[it.id.slice(4)] : null);
+    if ((h || lab) && it.tags && it.tags.models)
+      it.tags = Object.assign({}, it.tags, {models: it.tags.models.map(m => m[0] === "claude" ? [m[0], lab || m[1], h || m[2]] : m)});
+  }
+  return list;
+}
+// one tooltip for every [data-hint]: hover and keyboard focus on desktop, a tap (2.5 s) on touch
+let hintTimer;
+function showHint(el) {
+  const tip = document.getElementById("hint");
+  tip.textContent = el.dataset.hint;
+  tip.hidden = false;
+  const r = el.getBoundingClientRect(), w = tip.offsetWidth || 260, h = tip.offsetHeight || 40;
+  tip.style.left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8)) + "px";
+  tip.style.top = (r.top - h - 8 < 8 ? r.bottom + 8 : r.top - h - 8) + "px";
+}
+const hideHint = () => { document.getElementById("hint").hidden = true; };
+document.addEventListener("pointerover", e => {
+  const el = e.target.closest && e.target.closest("[data-hint]");
+  if (!el) return;
+  showHint(el);
+  if (e.pointerType === "touch") { clearTimeout(hintTimer); hintTimer = setTimeout(hideHint, 2500); }
+});
+document.addEventListener("pointerout", e => { if (e.pointerType !== "touch" && e.target.closest && e.target.closest("[data-hint]")) hideHint(); });
+document.addEventListener("focusin", e => { const el = e.target.closest && e.target.closest("[data-hint]"); if (el) showHint(el); else hideHint(); });
+document.addEventListener("scroll", hideHint, true);
+
+// ---- search across every view (/ to focus) ----
+let searchIndex = null, searchFor = null, searchHits = [], searchActive = 0;
+const plain = h => String(h || "").replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ");
+function buildSearchIndex() {
+  if (searchIndex && searchFor === data.generated) return searchIndex;
+  const out = [];
+  const add = (group, it) => {
+    const t = it.tags || {}, s = it.schedule || {};
+    const extra = [t.cadence && t.cadence[1], ...(t.models || []).map(m => m[1]), ...(t.conns || []), s.now, s.src, ...(it.how || []).map(plain)].filter(Boolean).join(" ");
+    out.push({id: it.id, group, name: it.name, sub: it.sub || "", status: it.status, hay: [it.name, it.sub, it.where, it.head, extra].join(" ").toLowerCase()});
+  };
+  const agents = hintify(catalogize(build(data)));
+  agents.forEach(it => add("Agents", it));
+  catalogize(buildRoles(data)).forEach(it => add("Roles", it));
+  catalogize(buildSchedules(data, agents)).forEach(it => add("Schedules", it));
+  buildConnections(data, agents).forEach(it => add("Connections", it));
+  for (const it of buildInfisical(agents)) {
+    add("Infisical", it);
+    const t = infT(it.id.replace("cn-inf-", ""));
+    if (t) for (const k of [...t.secrets, ...t.settings.map(x => x.key)])
+      out.push({id: it.id, group: "Infisical keys", name: k, sub: folderLabel(t) + (t.secrets.includes(k) ? " · secret" : " · setting"), status: "up", hay: (k + " " + folderLabel(t)).toLowerCase()});
+  }
+  searchFor = data.generated;
+  return (searchIndex = out);
+}
+function mark(text, terms) {
+  let html = esc(text);
+  for (const term of terms) {
+    if (!term) continue;
+    const re = new RegExp("(" + esc(term).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig");
+    html = html.replace(re, "<mark>$1</mark>");
+  }
+  return html;
+}
+function runSearch(q) {
+  const pop = document.getElementById("search-pop");
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length || !data) { pop.hidden = true; searchHits = []; return; }
+  const order = ["Agents", "Roles", "Schedules", "Connections", "Infisical", "Infisical keys"];
+  searchHits = buildSearchIndex().filter(e => terms.every(t => e.hay.includes(t))).map(e => {
+    const n = e.name.toLowerCase(), q0 = terms.join(" ");
+    return Object.assign({score: n === q0 ? 300 : n.startsWith(q0) ? 200 : terms.every(t => n.includes(t)) ? 100 : 10}, e);
+  }).sort((a, b) => b.score - a.score || order.indexOf(a.group) - order.indexOf(b.group)).slice(0, 24);
+  // groups in the order of their best hit, so the first row shown is the best match (and the Enter target)
+  const groups = [...new Set(searchHits.map(x => x.group))];
+  searchHits = groups.flatMap(g => searchHits.filter(x => x.group === g));
+  searchActive = 0;
+  if (!searchHits.length) { pop.innerHTML = `<p class="pop-empty">Nothing matches “${esc(q)}”.</p>`; pop.hidden = false; return; }
+  let i = 0;
+  pop.innerHTML = groups.map(g => `<div class="sr-group">${esc(g)}</div>` + searchHits.filter(h => h.group === g).map(h => {
+    const idx = searchHits.indexOf(h);
+    return `<button type="button" role="option" class="pop-item s-${esc(h.status)}${idx === searchActive ? " active" : ""}" data-goto="${esc(h.id)}" data-idx="${idx}" aria-selected="${idx === searchActive}">` +
+      `<span class="dot"></span><span class="pop-name">${mark(h.name, terms)}</span><span class="pop-time"></span><span class="pop-sub">${mark(h.sub, terms)}</span></button>`;
+  }).join("")).join("");
+  pop.hidden = false;
+}
+function moveSearch(d) {
+  if (!searchHits.length) return;
+  searchActive = (searchActive + d + searchHits.length) % searchHits.length;
+  document.querySelectorAll("#search-pop .pop-item").forEach(b => {
+    const on = +b.dataset.idx === searchActive;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+    if (on && b.scrollIntoView) b.scrollIntoView({block: "nearest"});
+  });
+}
+function closeSearch(clear) {
+  document.getElementById("search-pop").hidden = true;
+  if (clear) document.getElementById("search").value = "";
+}
+function goSearch(hit) {
+  if (!hit) return;
+  switchView(VIEW_OF(hit.id));
+  if (VIEW_OF(hit.id) === "agents") setAgentsMode(MODE_OF(hit.id));
+  select(hit.id, true);
+  closeSearch(true);
+}
+document.addEventListener("input", e => { if (e.target.id === "search") runSearch(e.target.value); });
+document.addEventListener("keydown", e => {
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test((e.target.tagName || ""));
+  if (e.key === "/" && !typing) { e.preventDefault(); document.getElementById("search").focus(); return; }
+  if (e.target.id !== "search") return;
+  if (e.key === "ArrowDown") { e.preventDefault(); moveSearch(1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); moveSearch(-1); }
+  else if (e.key === "Enter") { e.preventDefault(); goSearch(searchHits[searchActive]); }
+  else if (e.key === "Escape") { closeSearch(true); e.target.blur(); }
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest) return;
+  const hit = e.target.closest("#search-pop [data-goto]");
+  if (hit) { closeSearch(true); return; }   // the shared [data-goto] handler already jumped
+  if (!e.target.closest(".search")) closeSearch(false);
+});
+document.addEventListener("focusin", e => { if (e.target.id === "search" && e.target.value) runSearch(e.target.value); });
+
+// ---- Touch ID / Face ID: passkeys (WebAuthn) as a second way to unlock ----
+let pkMsg = "", pkMsgOk = true;
+function pkSupported() { return !!(window.PublicKeyCredential && navigator.credentials); }   // a function, so the preview can stand in for it
+const toBuf = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0)).buffer;
+const toB64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const JSON_POST = body => ({method: "POST", headers: {"Content-Type": "application/json", "X-Console-Action": "1"}, body: JSON.stringify(body)});
+function deviceName() {
+  const ua = navigator.userAgent || "";
+  return /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Mac/.test(ua) ? "Mac" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows PC" : "device";
+}
+async function pkOptions(purpose) {
+  const r = await fetch("api/passkey/options", JSON_POST({purpose}));
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+  const pk = j.publicKey;
+  pk.challenge = toBuf(pk.challenge);
+  if (pk.user) pk.user.id = toBuf(pk.user.id);
+  for (const c of [...(pk.allowCredentials || []), ...(pk.excludeCredentials || [])]) c.id = toBuf(c.id);
+  return pk;
+}
+const pkError = e => e && e.name === "NotAllowedError" ? "Touch ID / Face ID was cancelled or timed out." : e && e.name === "InvalidStateError" ? "This device already has a passkey for the console." : (e && e.message) || String(e);
+async function passkeyUnlock() {
+  try {
+    const cred = await navigator.credentials.get({publicKey: await pkOptions("login")});
+    const res = cred.response;
+    const r = await fetch("api/passkey/login", JSON_POST({id: cred.id, clientDataJSON: toB64u(res.clientDataJSON),
+      authenticatorData: toB64u(res.authenticatorData), signature: toB64u(res.signature)}));
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) { setSession("cookie", j.expires_at); unlockMsg = ""; pkMsg = ""; }
+    else unlockMsg = j.error || "Touch ID / Face ID didn't verify.";
+  } catch (e) { unlockMsg = pkError(e); }
+  renderKeybar(); renderDetail();
+}
+async function passkeyAdd() {
+  try {
+    const cred = await navigator.credentials.create({publicKey: await pkOptions("register")});
+    const r = await fetch("api/passkey/register", JSON_POST({id: cred.id, clientDataJSON: toB64u(cred.response.clientDataJSON),
+      attestationObject: toB64u(cred.response.attestationObject), name: deviceName()}));
+    const j = await r.json().catch(() => ({}));
+    pkMsgOk = r.ok; pkMsg = r.ok ? "Touch ID / Face ID added for this " + deviceName() + "." : j.error || "Couldn't add it.";
+  } catch (e) { pkMsgOk = false; pkMsg = pkError(e); }
+  await ping(); render(true);
+}
+async function passkeyRemove(id) {
+  const r = await fetch("api/passkey/delete", JSON_POST({id}));
+  const j = await r.json().catch(() => ({}));
+  pkMsgOk = r.ok; pkMsg = r.ok ? "Passkey removed." : j.error || "Couldn't remove it.";
+  await ping(); render(true);
+}
+function consoleItems() {
+  const pk = (api && api.passkeys) || {};
+  const list = pk.list || [];
+  const rows = list.map(k => `<tr><td>${esc(k.name)}</td><td>${esc(when(k.created))}</td><td>${esc(k.last_used ? ago(k.last_used) : "never")}</td>` +
+    `<td><button type="button" class="act danger" data-pkdel="${esc(k.id)}">Remove</button></td></tr>`).join("");
+  const sp = SITE().paths || {};
+  return [{id: "cn-console", section: "Console", name: "Console access", status: api ? (session ? "running" : "up") : "unknown",
+    sub: (session ? "unlocked · " : "locked · ") + (pk.count || 0) + " passkey" + (pk.count === 1 ? "" : "s"),
+    where: "agent console", head: "How actions get unlocked: your password, or Touch ID / Face ID on a device where you added a passkey. Each unlock lasts 30 minutes.",
+    tags: {},
+    body: `<div class="facts">${fact("Unlock", "Password · " + (pk.available ? "Touch ID / Face ID" : "passkeys unavailable"))}${fact("Session", session ? "unlocked until " + esc(when(sessionUntil)) : "locked")}${fact("Passkeys", pk.count || 0)}</div>` +
+      (session ? `<div><h3>Passkeys</h3>${list.length ? `<div class="tablewrap"><table><thead><tr><th>Device</th><th>Added</th><th>Last used</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="note">None yet.</p>'}` +
+        (pk.available && pkSupported() ? `<p><button type="button" class="act primary" id="key-addpk2">Add Touch ID / Face ID on this device</button></p>` : "") + `</div>`
+        : `<p class="note">Unlock to see and manage passkeys.</p>`),
+    how: ["<b>Touch ID / Face ID</b> is a passkey (WebAuthn): your device keeps the private key and only proves it with your fingerprint or face. The console stores the public key only.",
+      "Passkeys made in Safari on your Mac and iPhone sync through iCloud Keychain, so adding one on the Mac usually covers the iPhone too.",
+      "The password always keeps working. Change it on the server with <code>agent-console.py passwd</code> (see the README).",
+      "Five failed tries (password or passkey) block unlocking for 10 minutes; every unlock is logged."],
+    links: [], cmds: [["Change the password", `sudo python3 ${sp.install || "/opt/agent-console"}/agent-console.py passwd ${sp.password || "/etc/agent-console/password"} && docker restart agent-console`],
+      ["Unlock log", `grep unlock ${sp.log || "/var/lib/agent-console/actions.log"} | tail`]]}];
+}
+document.addEventListener("click", e => {
+  if (!e.target.closest) return;
+  if (e.target.closest("#key-passkey")) return passkeyUnlock();
+  if (e.target.closest("#key-addpk") || e.target.closest("#key-addpk2")) return passkeyAdd();
+  const del = e.target.closest("[data-pkdel]");
+  if (del && session) {
+    if (del.dataset.armed) return passkeyRemove(del.dataset.pkdel);
+    del.dataset.armed = "1"; del.textContent = "Confirm remove";
+    setTimeout(() => { if (del.isConnected !== false) { delete del.dataset.armed; del.textContent = "Remove"; } }, 5000);
+  }
+});
+</script>
+</body>
+</html>

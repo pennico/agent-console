@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  private-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: No private patterns in the tree
+        env:
+          # Extra private patterns live in the repository variable PRIVATE_PATTERNS,
+          # never in this file (it is public).
+          PRIVATE_PATTERNS: ${{ vars.PRIVATE_PATTERNS }}
+        run: scripts/scan-private.sh
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the floor (tomllib); 3.13 matches the container image.
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install -r requirements-dev.txt
+      - name: Tests (runner, web side, passkeys, terminal, collector, page smoke test)
+        run: pytest -q
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the web-side image
+        run: |
+          cp console/agent-console.py deploy/
+          docker build -t agent-console:ci deploy
+          docker run --rm agent-console:ci python3 -c "import cryptography; print('cryptography', cryptography.__version__)"
