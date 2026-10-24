@@ -679,7 +679,7 @@ class Handler(BaseHTTPRequestHandler):
                 res = {"actions": {}, "term": None, "runner": "down"}
             keys = load_passkeys()
             unlocked = self.session_until()
-            return self.send(200, {**res, "unlocked_until": unlocked, "passkeys": {
+            return self.send(200, {**res, "login": self.headers.get("Tailscale-User-Login", ""), "unlocked_until": unlocked, "passkeys": {
                 "available": passkeys_available(), "count": len(keys),
                 "list": [{k2: k[k2] for k2 in ("id", "name", "created", "last_used")} for k in keys] if unlocked else []}})
         self.send(404, {"error": "not found"})

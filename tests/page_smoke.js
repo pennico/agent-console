@@ -29,5 +29,9 @@ setTimeout(() => {
     for (const it of items) { sel[SK()] = it.id; renderDetail(); }
   }
   out.search = buildSearchIndex().length;
+  setHdrPop("account");
+  out.account = document.getElementById("acct-pop").innerHTML.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ");   // \\s: this code sits in a template string
+  view = "agents"; agentsMode = "location"; render(true); sel[SK()] = "bridge";
+  askDraft = "Why is it down?"; out.ask = askPrompt();
   console.log(JSON.stringify(out));
 }, 100);`);

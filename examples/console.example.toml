@@ -7,6 +7,7 @@ name = "agents"                                 # shown in the page title
 timezone = "UTC"                                # the server's zone (IANA name), e.g. "Europe/Berlin"
 github_owner = ""                               # example: "your-github-user"; enables repo links
 catalog = "/etc/agent-console/catalog.json"     # descriptions, links and connections (see catalog.example.json)
+disks = ["/"]                                   # mount points whose usage the Account box shows
 
 [paths]
 web = "/var/lib/agent-console/web"              # collector output: index.html, status.json, ledger.json

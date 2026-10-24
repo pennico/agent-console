@@ -19,6 +19,8 @@ import gzip
 import json
 import os
 import re
+import shutil
+import socket
 import subprocess
 import time
 import tomllib
@@ -620,6 +622,34 @@ def update_ledger(items, known):
     return {i: e for i, e in ledger.items()}
 
 
+def host():
+    """General facts about the server for the page's Account box: no secrets, no privileges."""
+    info = {"hostname": socket.gethostname(), "kernel": os.uname().release, "cpus": os.cpu_count()}
+    try:
+        rel = dict(line.rstrip("\n").split("=", 1) for line in open("/etc/os-release") if "=" in line)
+        info["os"] = rel.get("PRETTY_NAME", "").strip('"') or None
+    except OSError:
+        pass
+    try:
+        info["uptime_s"] = int(float(open("/proc/uptime").read().split()[0]))
+        info["load"] = [round(x, 2) for x in os.getloadavg()]
+        mem = {k: int(v.split()[0]) * 1024 for k, v in (line.split(":", 1) for line in open("/proc/meminfo")) if k in ("MemTotal", "MemAvailable")}
+        info["memory"] = {"total": mem.get("MemTotal"), "available": mem.get("MemAvailable")}
+    except (OSError, ValueError, IndexError):
+        pass
+    disks = []
+    for path in cfg("site", "disks", ["/"]):
+        try:
+            u = shutil.disk_usage(path)
+            disks.append({"path": path, "total": u.total, "used": u.used, "free": u.free})
+        except OSError:
+            disks.append({"path": path, "total": None})
+    info["disks"] = disks
+    states = (sh(["docker", "ps", "-a", "--format", "{{.State}}"]) or "").split()
+    info["containers"] = {"running": states.count("running"), "total": len(states)} if states else None
+    return info
+
+
 def site():
     """What the page needs to know about this site: names, hosts, links and the
     catalog of descriptions (a private JSON file; the page has generic fallbacks)."""
@@ -641,7 +671,7 @@ def site():
 
 
 def main():
-    status = {"generated": NOW, "site": site(), "agent_runner": agent_runner(), "job_bot": job_bot(),
+    status = {"generated": NOW, "site": site(), "host": host(), "agent_runner": agent_runner(), "job_bot": job_bot(),
               "claude_agent": claude_agent(), "overwatch": overwatch(), "infisical": infisical()}
     os.makedirs(OUT, exist_ok=True)
     ledger = update_ledger(*inventory(status))

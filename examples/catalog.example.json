@@ -6,6 +6,12 @@
  "agent_account": "my-agent-bot",
  "infisical_project": "my-server",
 
+ "ask_claude_url": "https://claude.ai/code",
+ "account_links": [
+  ["Dashboard", "https://dashboard.example.com", "Home dashboard"],
+  ["Claude usage", "https://claude.ai/settings/usage", "Plan limits"]
+ ],
+
  "links": {
   "infisical": ["Infisical", "https://infisical.example.com", "Edit a secret; the agent re-renders the .env within 60 s"],
   "ntfy": ["ntfy", "https://ntfy.example.com", "Push topics"]

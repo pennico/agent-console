@@ -45,6 +45,12 @@ Across the page:
 - Things that were removed are kept, greyed out, under **History**.
 - Hover hints show the exact model behind a model pill and explain each tag.
 - The header counts ("2 running", "1 needs a look") open the matching items.
+- **Ask Claude** (top right) turns your question and what the console shows
+  about the selected item into a prompt. It copies the prompt and opens Claude,
+  where your Remote Control session lives. The console itself never runs Claude.
+- **Account** (top right) shows who is signed in, the session and passkeys,
+  facts about the server (OS, uptime, load, memory, disks, containers), the
+  console's version, and your links.
 
 ## How it works
 

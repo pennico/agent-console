@@ -22,6 +22,10 @@ First release.
   removed things (`ledger.json`).
 - **Search** across all views, including Infisical key names. Hover hints
   for models, cadences, connections and status. Clickable header counts.
+- **Ask Claude** button: copies your question plus the selected item's
+  context and opens Claude (no server-side chat).
+- **Account** box: login, session, passkeys, host facts (OS, uptime, load,
+  memory, disks, containers), version and your links.
 - **Actions** through a host runner with a fixed allow-list:
   - restart, stop or start a container;
   - pause or resume a worker, or stop its current session;

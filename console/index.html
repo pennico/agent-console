@@ -35,6 +35,28 @@ header.top { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: c
   border-bottom: 1px solid var(--line); background: var(--panel); }
 header.top h1 { font-size: 16px; margin: 0; font-weight: 650; }
 .counts { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Header: Ask Claude and Account */
+.hdr-actions { position: relative; margin-left: auto; display: flex; gap: 6px; }
+.hbtn { font: inherit; font-size: 13px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); cursor: pointer; }
+.hbtn:hover, .hbtn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.hbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hdr-pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 45; width: min(400px, calc(100vw - 32px)); max-height: 75vh; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgb(0 0 0 / 0.16); padding: 6px 12px 12px; }
+.hdr-pop textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 13.5px; padding: 8px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--sunk); color: var(--fg); resize: vertical; }
+.hdr-pop textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; background: var(--panel); }
+.ask-ctx { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); margin: 8px 0; }
+.ask-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.acct-sec { border-top: 1px solid var(--line); padding: 8px 0 4px; }
+.acct-sec:first-of-type { border-top: 0; }
+.acct-sec h4 { margin: 0 0 4px; font: 500 10.5px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.acct-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 2px 0; }
+.acct-row > span { color: var(--muted); flex-shrink: 0; }
+.acct-row b { font-weight: 550; text-align: right; overflow-wrap: anywhere; }
+.acct-links { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.acct-links a { font-size: 12.5px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; text-decoration: none; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-links a:hover, .acct-links a:focus-visible { border-color: var(--accent); }
 .pk-btn { font-weight: 600; border-color: var(--accent) !important; color: var(--accent); }
 /* Search */
 .search { position: relative; flex: 0 1 260px; min-width: 160px; }
@@ -339,6 +361,12 @@ a.c:hover { border-color: var(--accent); }
     <div class="counts-wrap"><div class="counts" id="counts"></div><div class="count-pop" id="count-pop" role="dialog" aria-label="Running and needing a look" hidden></div></div>
     <span class="updated" id="updated">loading…</span>
     <div class="keybar" id="keybar" hidden></div>
+    <div class="hdr-actions">
+      <button type="button" class="hbtn" id="ask-btn" aria-expanded="false" aria-controls="ask-pop">Ask Claude</button>
+      <button type="button" class="hbtn" id="acct-btn" aria-expanded="false" aria-controls="acct-pop">Account</button>
+      <div class="hdr-pop" id="ask-pop" role="dialog" aria-label="Ask Claude" hidden></div>
+      <div class="hdr-pop" id="acct-pop" role="dialog" aria-label="Account" hidden></div>
+    </div>
   </header>
   <details class="viewtop" id="viewtop" data-group="chart" open hidden>
     <summary><span class="g-name">Next 7 days</span>
@@ -1220,7 +1248,7 @@ function render(force) {
     : view === "connections" ? buildConnections(data, agentItems).concat(buildInfisical(agentItems), consoleItems())
     : agentsMode === "roles" ? catalogize(buildRoles(data)) : agentItems)));
   if (!items.some(i => i.id === sel[SK()])) sel[SK()] = items[0] && items[0].id;
-  renderTabs(); renderCounts(); renderList(); renderTimeline(); renderRoleGrid();
+  renderTabs(); renderCounts(); renderList(); renderTimeline(); renderRoleGrid(); renderHdr();
   // Don't rebuild the pane under the cursor while someone is typing a new schedule.
   const f = document.activeElement, main = document.getElementById("main");
   if (force || !(f && main.contains && main.contains(f) && /^(INPUT|SELECT)$/.test(f.tagName))) renderDetail();
@@ -1906,6 +1934,117 @@ document.addEventListener("click", e => {
     del.dataset.armed = "1"; del.textContent = "Confirm remove";
     setTimeout(() => { if (del.isConnected !== false) { delete del.dataset.armed; del.textContent = "Remove"; } }, 5000);
   }
+});
+// ---- header: Ask Claude and Account ----
+// Ask Claude writes a prompt from your question plus what the console shows about the selected item,
+// copies it and opens Claude, where the Remote Control session lives. The console never runs Claude itself.
+const VERSION = "0.1.0", REPO_URL = "https://github.com/pennico/agent-console";
+let hdrPop = null, askDraft = "", askWithCtx = true;   // hdrPop: "ask" | "account" | null
+const askUrl = () => CAT().ask_claude_url || "https://claude.ai/code";
+const askWhere = () => CAT().rc_name ? `Remote Control “${CAT().rc_name}”` : "your Claude chat";
+const textOf = h => String(h || "").replace(/<br\s*\/?>|<\/(div|p|li|tr|h3)>/gi, "\n").replace(/<[^>]+>/g, " ")
+  .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+  .replace(/[ \t]+/g, " ").replace(/ *\n[\n ]*/g, "\n").trim();
+const selItem = () => items.find(i => i.id === sel[SK()]);
+function askContext(it) {
+  if (!it) return "";
+  const s = it.schedule || {}, lines = [
+    `Item: ${it.name} (${it.where}), status: ${STATUS_LABEL[it.status] || it.status}`,
+    it.sub && "Summary: " + it.sub,
+    s.now && "Schedule: " + s.now + (s.src ? " (" + textOf(s.src) + ")" : ""),
+    it.head && "About: " + textOf(it.head),
+    it.body && "Details: " + textOf(it.body).replace(/\n/g, " · ").slice(0, 900)];
+  return `\n\nWhat the agent console shows (${SITE().name || "server"}, ${new Date().toLocaleString()}, item id ${it.id}):\n` +
+    lines.filter(Boolean).map(l => "- " + l).join("\n");
+}
+const askPrompt = () => askDraft.trim() + (askWithCtx ? askContext(selItem()) : "");
+function renderAsk() {
+  const it = selItem();
+  document.getElementById("ask-pop").innerHTML = `<div class="pop-head"><b>Ask Claude</b><button type="button" class="pop-close" data-hdr-close aria-label="Close">✕</button></div>
+    <textarea id="ask-q" rows="4" placeholder="What do you want to know or change?" aria-label="Your question">${esc(askDraft)}</textarea>
+    <label class="ask-ctx"><input type="checkbox" id="ask-ctx"${askWithCtx ? " checked" : ""}> Add what the console shows about <b id="ask-ctx-name">${esc(it ? it.name : "the selected item")}</b></label>
+    <div class="ask-acts"><button type="button" class="act primary" id="ask-go">Copy and open Claude ↗</button><button type="button" class="act" id="ask-copy">Copy only</button></div>
+    <p class="act-note" id="ask-msg" role="status">Opens ${esc(askWhere())}: paste there and follow up in that chat. The console itself never runs Claude.</p>`;
+}
+function copyText(t) {
+  if (typeof navigator !== "undefined" && navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t);
+  return Promise.reject(new Error("no clipboard"));
+}
+function askSend(open) {
+  const msg = document.getElementById("ask-msg"), text = askPrompt();
+  if (!askDraft.trim()) { msg.textContent = "Type a question first."; return; }
+  const copied = copyText(text);
+  if (open) window.open(askUrl(), "_blank", "noopener");   // in the click itself, so it isn't blocked as a pop-up
+  copied.then(() => { msg.textContent = open ? "Copied: paste it into the chat that just opened." : "Copied."; },
+    () => {   // no clipboard (plain http or an old browser): leave the full prompt selected to copy by hand
+      const q = document.getElementById("ask-q"); q.value = text; q.focus(); q.select();
+      msg.textContent = "Couldn't copy by itself: the full prompt is selected above, copy it by hand.";
+    });
+}
+const bytes = n => n == null ? "—" : n >= 1e12 ? (n / 1e12).toFixed(1) + " TB" : n >= 1e9 ? Math.round(n / 1e9) + " GB" : Math.round(n / 1e6) + " MB";
+const pct = (a, b) => a != null && b ? ` · ${Math.round(a / b * 100)}%` : "";
+const uptimeTxt = s => s == null ? "—" : s >= 86400 ? `${Math.floor(s / 86400)} d ${Math.floor(s % 86400 / 3600)} h` : `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min`;
+function renderAccount() {
+  const h = (data && data.host) || {}, site = SITE(), pk = (api && api.passkeys) || {}, mem = h.memory || {};
+  const used = mem.total && mem.available != null ? mem.total - mem.available : null;
+  const row = (k, v) => `<div class="acct-row"><span>${esc(k)}</span><b>${v}</b></div>`;
+  const links = (CAT().account_links || [Lk("claudeUsage"), Lk("claudeCode"),
+    site.github_owner && ["GitHub", "https://github.com/" + site.github_owner, "Your repositories"]]).filter(x => x && x[1]);
+  document.getElementById("acct-pop").innerHTML = `<div class="pop-head"><b>Account</b><button type="button" class="pop-close" data-hdr-close aria-label="Close">✕</button></div>
+    <div class="acct-sec"><h4>You</h4>
+      ${row("Signed in as", esc(api ? api.login || "—" : "view only (actions not reachable)"))}
+      ${row("Actions", api ? (session ? "unlocked until " + esc(when(sessionUntil)) : "locked") : "—")}
+      ${row("Touch ID / Face ID", (pk.count || 0) + ` passkey${pk.count === 1 ? "" : "s"} · <button type="button" class="goto" data-goto="cn-console">manage →</button>`)}</div>
+    <div class="acct-sec"><h4>Server</h4>
+      ${row("Host", esc(h.hostname || "—"))}
+      ${row("System", esc([h.os, h.kernel && "kernel " + h.kernel].filter(Boolean).join(" · ") || "—"))}
+      ${row("Up for", esc(uptimeTxt(h.uptime_s)))}
+      ${row("Load", h.load ? esc(h.load.join(" / ")) + (h.cpus ? ` <span class="muted">(${h.cpus} CPUs)</span>` : "") : "—")}
+      ${row("Memory", used != null ? esc(bytes(used) + " of " + bytes(mem.total) + pct(used, mem.total)) : "—")}
+      ${(h.disks || []).map(d => row("Disk " + d.path, d.total ? esc(bytes(d.used) + " of " + bytes(d.total) + pct(d.used, d.total)) : "not readable")).join("")}
+      ${row("Containers", h.containers ? esc(h.containers.running + " running of " + h.containers.total) : "—")}
+      ${row("Time zone", esc(site.timezone || "—"))}</div>
+    <div class="acct-sec"><h4>Console</h4>
+      ${row("Version", `<a href="${REPO_URL}/releases" target="_blank" rel="noopener">agent-console ${VERSION} ↗</a>`)}
+      ${row("Status data", data ? "updated " + esc(ago(data.generated)) : "—")}
+      ${row("Action runner", api ? (api.runner === "down" ? '<span class="bad">down</span>' : '<span class="ok">running</span>') : "—")}
+      ${row("Console terminal", api ? (api.term ? '<span class="ok">ready</span>' : "off") : "—")}</div>
+    ${links.length ? `<div class="acct-sec"><h4>Links</h4><div class="acct-links">${links.map(([t, u, d]) =>
+      `<a href="${esc(u)}" target="_blank" rel="noopener" title="${esc(d || u)}">${esc(t)} ↗</a>`).join("")}</div></div>` : ""}`;
+}
+function setHdrPop(kind) {
+  hdrPop = kind;
+  if (kind && typeof popKind !== "undefined" && popKind) setPop(null);
+  for (const [k, id] of [["ask", "ask"], ["account", "acct"]]) {
+    document.getElementById(id + "-btn").setAttribute("aria-expanded", String(hdrPop === k));
+    document.getElementById(id + "-pop").hidden = hdrPop !== k;
+  }
+  if (kind === "ask") { renderAsk(); const q = document.getElementById("ask-q"); if (q && q.focus) q.focus(); }
+  if (kind === "account") renderAccount();
+}
+function renderHdr() {   // after each refresh: keep the open box current without wiping a half-typed question
+  if (hdrPop === "account") renderAccount();
+  const n = document.getElementById("ask-ctx-name"), it = selItem();
+  if (hdrPop === "ask" && n) n.textContent = it ? it.name : "the selected item";
+}
+document.addEventListener("click", e => {
+  if (!e.target.closest) return;
+  if (e.target.closest("#ask-btn")) return setHdrPop(hdrPop === "ask" ? null : "ask");
+  if (e.target.closest("#acct-btn")) return setHdrPop(hdrPop === "account" ? null : "account");
+  if (e.target.closest("#ask-go")) return askSend(true);
+  if (e.target.closest("#ask-copy")) return askSend(false);
+  if (e.target.closest("[data-hdr-close]") || e.target.closest("#acct-pop [data-goto]")) return setHdrPop(null);
+  if (hdrPop && !e.target.closest(".hdr-pop")) setHdrPop(null);
+});
+document.addEventListener("input", e => {
+  if (e.target.id === "ask-q") askDraft = e.target.value;
+  if (e.target.id === "ask-ctx") askWithCtx = e.target.checked;
+});
+document.addEventListener("change", e => { if (e.target.id === "ask-ctx") askWithCtx = e.target.checked; });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape" || !hdrPop) return;
+  const b = document.getElementById(hdrPop === "ask" ? "ask-btn" : "acct-btn");
+  setHdrPop(null); b.focus();
 });
 </script>
 </body>

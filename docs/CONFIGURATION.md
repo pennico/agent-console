@@ -18,7 +18,7 @@ Two files, both outside the code and both free of secret values:
 
 | Section | Used by | What for |
 |---|---|---|
-| `[site]` | all | `timezone` (dispatcher log names and job times use it), `github_owner` (repo links), `catalog` path |
+| `[site]` | all | `timezone` (dispatcher log names and job times use it), `github_owner` (repo links), `catalog` path, `disks` (mount points shown in the Account box) |
 | `[paths]` | collector, page | `web`: where `index.html`, `status.json` and `ledger.json` live; `install`: shown in commands |
 | `[console]` | web side, runner, terminal | runner socket, passkey file, audit log, password file, collector path (run after each action) |
 | `[runner]` | collector, runner | the runner's checkout (`dir`, `projects`), container name, its Infisical template name, the project that runs the overseer (`ops_repo`), the backend switch script (`mode_command`), `app_decommissioned`, `[runner.activity]` evidence files |
@@ -82,6 +82,8 @@ The catalog refers to items by id:
 | `model_hint`, `item_model_hint`, `item_model_label` | `{…}` | the exact model behind a model pill, in general or per item |
 | `conn_inf`, `inf_users`, `inf_of_item`, `sch_inf` | `{…}` | which Infisical keys and folders belong to which item, when the defaults (template name = container or project name) don't fit |
 | `rc_name`, `claude_model`, `agent_account`, `infisical_project` | strings | small bits of wording |
+| `account_links` | list of `[title, url, note]` | the Links section of the Account box (default: Claude usage, Claude Code, your GitHub) |
+| `ask_claude_url` | string | where "Ask Claude" opens (default `https://claude.ai/code`, where Remote Control sessions are listed) |
 
 The catalog is shown to everyone who can open the console. Write credential
 *names* and where they are stored, never values.

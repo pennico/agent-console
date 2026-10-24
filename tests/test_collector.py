@@ -66,6 +66,14 @@ def test_no_secret_value_reaches_the_page(status, site):
         assert value not in text
 
 
+def test_host_facts(status):
+    h = status["host"]
+    assert h["hostname"] and h["kernel"] and h["cpus"] >= 1
+    assert h["disks"][0]["path"] == "/" and h["disks"][0]["total"] > 0
+    assert h["containers"] == {"running": 3, "total": 4}
+    assert h["memory"]["total"] > 0 and h["uptime_s"] >= 0
+
+
 def test_site_block_and_ledger(status):
     site = status["site"]
     assert site["github_owner"] == "example" and site["ops_repo"] == "alpha"
@@ -89,6 +97,8 @@ def test_page_renders_every_view(status, site):
     conns = {i["id"] for i in out["connections:location"]}
     assert "cn-gh" in conns and "cn-inf-agent-runner" in conns and "cn-console" in conns
     assert out["search"] > 20
+    assert "Disk /" in out["account"] and "3 running of 4" in out["account"] and "agent-console 0.1.0" in out["account"]
+    assert out["ask"].startswith("Why is it down?\n\nWhat the agent console shows") and "- Item: " in out["ask"]
 
 
 def test_example_config_parses():

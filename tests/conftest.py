@@ -38,6 +38,8 @@ elif a[:1] == ["top"]:
               "103 python3 -u /app/agent_memory/server.py\n104 bash /app/projects/beta/dispatcher/run.sh")
     elif a[1] == "claude-agent":
         print("201 bash rc-loop.sh\n202 claude remote-control --name test\n203 claude")
+elif a[:2] == ["ps", "-a"]:
+    print("running\nrunning\nexited\nrunning")
 elif a[:1] == ["logs"]:
     print("[run] start 2026-10-23T07:30:00\n[run] 4 new of 120\n[daemon] next run at 2026-10-24 07:30:00")
 elif a[:2] == ["exec", "agent-runner"] and "grep" in a:

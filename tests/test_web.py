@@ -92,6 +92,7 @@ def test_actions_need_the_owner_login(server):
     assert server.call("/api/unlock", {"password": PASSWORD}, login="someone@else.com")[0] == 403
     st, ping = server.call("/api/ping")
     assert st == 200 and ping["actions"]["restart"] is True and ping["unlocked_until"] is None
+    assert ping["login"] == OWNER
 
 
 def test_password_session_and_lock(server, site):
