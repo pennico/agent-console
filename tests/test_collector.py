@@ -111,3 +111,18 @@ def test_page_renders_with_the_example_catalog(status, site, tmp_path):
     assert sched["sch-cron-nightly-backup"]["name"] == "Nightly backup"
     roles = {i["id"]: i for i in out["agents:roles"]}
     assert roles["role-overseer"]["head"].startswith("Assesses")
+
+
+def test_missing_sources_show_as_unknown_not_a_crash(site, tmp_path, monkeypatch):
+    """A fresh server: no runner checkout, no chats, no templates, no crontab, docker down."""
+    cfg = tmp_path / "empty.toml"
+    web = tmp_path / "web-empty"
+    cfg.write_text(f'[paths]\nweb = "{web}"\n[runner]\ndir = "{tmp_path}/no-runner"\n[claude]\nchats = "{tmp_path}/no-chats"\n'
+                   f'[infisical]\ntemplates = "{tmp_path}/no-templates"\n[jobbot]\nenv = "{tmp_path}/no.env"\n')
+    monkeypatch.setenv("AGENT_CONSOLE_CONFIG", str(cfg))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")        # no docker, crontab or systemctl fakes
+    r = subprocess.run([sys.executable, str(CONSOLE / "agent-status.py")], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    status = json.loads((web / "status.json").read_text())
+    assert status["agent_runner"]["container"]["state"] == "unknown"
+    assert status["agent_runner"]["workers"] == [] and status["infisical"]["readable"] is False

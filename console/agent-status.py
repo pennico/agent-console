@@ -194,8 +194,11 @@ def project_repos():
 
 
 def projects_on_disk():
-    return sorted(d for d in os.listdir(PROJECTS)
-                  if not d.startswith(".") and os.path.isdir(os.path.join(PROJECTS, d, "dispatcher")))
+    try:
+        names = os.listdir(PROJECTS)
+    except OSError:      # runner not installed or not readable: no projects, not a crash
+        return []
+    return sorted(d for d in names if not d.startswith(".") and os.path.isdir(os.path.join(PROJECTS, d, "dispatcher")))
 
 
 def activity(repo):
