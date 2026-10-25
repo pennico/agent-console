@@ -1,6 +1,6 @@
 [project]
 name = "agent-console"
-version = "0.1.0"
+version = "0.2.0"
 description = "A private web console for the AI agents on a home server: status, schedules, connections and allow-listed actions."
 license = "MIT"
 requires-python = ">=3.11"

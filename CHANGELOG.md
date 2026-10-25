@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-10-25
 
 - **New layout, after media-library.**
   - A shaded header with search, unlock, Ask Claude and Account.
