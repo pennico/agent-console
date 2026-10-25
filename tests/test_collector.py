@@ -99,6 +99,14 @@ def test_page_renders_every_view(status, site):
     assert out["search"] > 20
     assert "Disk /" in out["account"] and "3 running of 4" in out["account"] and "agent-console 0.1.0" in out["account"]
     assert out["ask"].startswith("Why is it down?\n\nWhat the agent console shows") and "- Item: " in out["ask"]
+    ui = out["ui"]
+    assert ui["detailHidden"] and ui["cards"] == len(out["agents:location"])        # nothing open at start; every item a card
+    assert ui["groups"][0] == "" and "agent-runner" in ui["groups"]                   # "All" first, then the groups
+    assert ui["chips"][0] == "all" and "running" in ui["chips"]
+    assert ui["rows"] == ui["cards"]                                                   # the list shows the same items
+    assert 0 < ui["groupCards"] < ui["cards"] and ui["title"] == ui["groups"][1]
+    assert ui["runningCards"] == sum(1 for i in out["agents:location"] if i["status"] == "running")
+    assert ui["detailOpen"] and ui["detailClosed"]
 
 
 def test_example_config_parses():

@@ -15,8 +15,13 @@ anything it can't find shows as unknown rather than failing. Site details
 
 ## What you get
 
-Three views, switched with the tabs at the top, plus search (`/`) across all
-of them:
+The layout follows its sibling project media-library:
+- a shaded header with search;
+- a left pane you can hide, with the three views and their groups;
+- a main area with a toolbar (status chips, a filter, a cards or list switch);
+- a detail pane on the right, which becomes a sheet on phones.
+
+The palette is warm, with light and dark modes. The three views:
 
 - **Agents**, in two modes:
   - *By location*: grouped by where each agent runs (the runner container

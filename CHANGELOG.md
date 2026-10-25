@@ -2,6 +2,19 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+- **New layout, after media-library.**
+  - A shaded header with search, unlock, Ask Claude and Account.
+  - A hideable left pane with the view switch (Agents | Schedules |
+    Connections), the Agents modes, and the groups with counts.
+  - A toolbar with status chips (All, Running, Needs a look, Off), a filter
+    box and a Cards | List switch.
+  - Items as cards or a list.
+  - A detail pane on the right that becomes a bottom sheet on phones;
+    Escape or ✕ closes it.
+  - The warm palette in light and dark mode.
+
 ## [0.1.0] - 2026-10-24
 
 First release.
