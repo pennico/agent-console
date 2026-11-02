@@ -13,16 +13,14 @@
  ],
 
  "links": {
-  "infisical": ["Infisical", "https://infisical.example.com", "Edit a secret; the agent re-renders the .env within 60 s"],
-  "ntfy": ["ntfy", "https://ntfy.example.com", "Push topics"]
+  "infisical": ["Infisical", "https://infisical.example.com", "Edit a secret; the agent re-renders the .env within 60 s"]
  },
 
  "conn_url": {
-  "ntfy": "https://ntfy.example.com",
   "Infisical": "https://infisical.example.com"
  },
  "conn_hint": {
-  "ntfy": "Push notifications: one topic per agent, deny-all except the agent users."
+  "Telegram": "Two-way phone channel: alerts out, replies and commands in."
  },
  "model_hint": {
   "claude": "Claude Code CLI (claude -p) on your subscription, with the CLI's default model."

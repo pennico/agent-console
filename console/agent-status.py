@@ -67,7 +67,7 @@ INFISICAL_TEMPLATES = os.environ.get("INFISICAL_TEMPLATES", cfg("infisical", "te
 INFISICAL_AGENT_YAML = os.path.expanduser(cfg("infisical", "agent_yaml", "~/.config/infisical-agent/agent.yaml"))
 CATALOG = os.environ.get("AGENT_CONSOLE_CATALOG", cfg("site", "catalog", "/etc/agent-console/catalog.json"))
 # Settings whose values may be shown; every other plain line is reported by name only
-# (some, like NTFY_TOPIC, are unguessable names that act as secrets).
+# (some are unguessable names that act as secrets).
 SHOW_VALUES = {"AGENT_BACKEND", "RUN_AT", "EMAIL_CHECK_INTERVAL_S", "DISPATCH_MAX_PRICE", "DISPATCH_DAILY_SESSIONS",
                "DISPATCH_MAX_TURNS_REVIEW", "PREPARE_FALLBACK", "CLAUDE_BACKEND", "TZ",
                *(f"AGENT_BACKEND_{r.upper()}" for r in ("impl", "arch", "qa", "adv", "verify", "overseer", "chat")),
