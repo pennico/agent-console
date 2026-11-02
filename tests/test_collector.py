@@ -57,7 +57,7 @@ def test_infisical_reports_names_never_values(status):
     assert runner["secrets"] == ["MISTRAL_API_KEY"] and runner["folders"] == ["/agent-runner"]
     assert runner["rendered"] == {"MISTRAL_API_KEY": "ok"}
     settings = {s["key"]: s["value"] for s in runner["settings"]}
-    assert settings == {"AGENT_BACKEND": "both", "NTFY_TOPIC": None}                  # only known settings show values
+    assert settings == {"AGENT_BACKEND": "both", "PUSH_TOPIC": None}                  # only known settings show values
 
 
 def test_no_secret_value_reaches_the_page(status, site):

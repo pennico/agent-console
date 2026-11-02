@@ -135,7 +135,7 @@ def site(tmp_path, monkeypatch):
     rendered = t / "rendered-runner.env"
     (tmpl / "agent-runner.tmpl").write_text(
         'MISTRAL_API_KEY={{ with getSecretByName "pid" "prod" "/agent-runner" "MISTRAL_API_KEY" }}{{ .Value }}{{ end }}\n'
-        "AGENT_BACKEND=both\nNTFY_TOPIC=SECRET-topic-name\n")
+        "AGENT_BACKEND=both\nPUSH_TOPIC=SECRET-topic-name\n")
     (tmpl / "job-bot.tmpl").write_text("RUN_AT=07:30\nEMAIL_CHECK_INTERVAL_S=3600\n")
     for p in tmpl.iterdir():
         p.chmod(0o600)
