@@ -71,6 +71,11 @@ RUNNER_SOCK = os.environ.get("CONSOLE_RUNNER_SOCK", cfg("console", "runner_sock"
 PASSWORD_FILE = os.environ.get("CONSOLE_PASSWORD_FILE", cfg("console", "password_file", "/etc/agent-console/password"))
 COOKIE_SECURE = os.environ.get("CONSOLE_COOKIE_SECURE", "1") == "1"   # Tailscale Serve is https
 COOKIE = "__Host-console" if COOKIE_SECURE else "console"
+# One unlock for the other consoles on this host that read the same password file (media-library, a finance console):
+# unlocking here also unlocks them, through a signed cookie they accept. This console never accepts that cookie for
+# itself: it runs host actions, so only its own unlock opens them. Same format as media-library's medialib/web/auth.py.
+SHARED_COOKIE = "__Host-console_unlock" if COOKIE_SECURE else "console_unlock"
+SHARED_SESSION_S = 1800
 CONSOLE_ORIGIN = os.environ.get("CONSOLE_ORIGIN", "")   # e.g. https://<server>.<tailnet>.ts.net:8097
 PASSKEYS_FILE = os.environ.get("CONSOLE_PASSKEYS", cfg("console", "passkeys", "/var/lib/agent-console/state/passkeys.json"))
 RP_ID = os.environ.get("CONSOLE_RP_ID", "") or CONSOLE_ORIGIN.split("://", 1)[-1].split(":")[0].split("/")[0]
@@ -450,6 +455,22 @@ def hash_password(pw):
     return f"scrypt${n}${r}${p}${salt.hex()}${h.hex()}"
 
 
+def shared_unlock(now=None):
+    """The value of the shared unlock cookie: v1.<unlocked at>.<until>.<nonce>.<mac>, the key HMAC(password file,
+    "console-unlock-v1"). None without a password file (then the other consoles could not check it anyway)."""
+    try:
+        with open(PASSWORD_FILE, "rb") as fh:
+            raw = fh.read().strip()
+    except OSError:
+        return None
+    if not raw:
+        return None
+    now = int(now or time.time())
+    key = hmac.new(raw, b"console-unlock-v1", hashlib.sha256).digest()
+    body = f"v1.{now}.{now + SHARED_SESSION_S}.{secrets.token_urlsafe(12)}"
+    return body + "." + b64u(hmac.new(key, body.encode(), hashlib.sha256).digest())
+
+
 def check_password(pw):
     try:
         with open(PASSWORD_FILE) as fh:
@@ -653,8 +674,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy",
                          "default-src 'self'; script-src 'self' 'unsafe-inline'; "
                          "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
-        if cookie is not None:
-            self.send_header("Set-Cookie", cookie)
+        for c in ([cookie] if isinstance(cookie, str) else cookie or []):
+            self.send_header("Set-Cookie", c)
         if not cache:
             self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -711,9 +732,9 @@ class Handler(BaseHTTPRequestHandler):
             exp = _sessions.get(s)
         return exp if s and exp and exp > time.time() else None
 
-    def cookie(self, value, max_age):
+    def cookie(self, value, max_age, name=None):
         flags = "; Secure" if COOKIE_SECURE else ""
-        return f"{COOKIE}={value}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Strict{flags}"
+        return f"{name or COOKIE}={value}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Strict{flags}"
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
@@ -742,7 +763,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/lock":
             with _sessions_lock:
                 _sessions.pop(self.session_id(), None)
-            return self.send(200, {"ok": True}, cookie=self.cookie("", 0))
+            return self.send(200, {"ok": True}, cookie=[self.cookie("", 0), self.cookie("", 0, SHARED_COOKIE)])   # locks the others too
         if not self.session_until():
             return self.send(401, {"error": "Locked: unlock with your password first (sessions last 30 minutes)."})
         try:
@@ -819,7 +840,11 @@ class Handler(BaseHTTPRequestHandler):
             for k in [k for k, exp in _sessions.items() if exp < now]:
                 del _sessions[k]
             _sessions[s] = now + SESSION_S
-        self.send(200, {"ok": True, "expires_at": now + SESSION_S}, cookie=self.cookie(s, SESSION_S))
+        cookies = [self.cookie(s, SESSION_S)]
+        shared = shared_unlock(now)
+        if shared:                                     # the media-library and finance consoles are unlocked too
+            cookies.append(self.cookie(shared, SHARED_SESSION_S, SHARED_COOKIE))
+        self.send(200, {"ok": True, "expires_at": now + SESSION_S}, cookie=cookies)
 
     def unlock(self, req):
         """Trade the password for a session cookie that expires after SESSION_S."""

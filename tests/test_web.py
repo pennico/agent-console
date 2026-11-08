@@ -100,8 +100,8 @@ def test_password_session_and_lock(server, site):
     assert server.call("/api/unlock", {"password": "wrong"})[0] == 401
     st, body = server.call("/api/unlock", {"password": PASSWORD})
     assert st == 200 and body["expires_at"] > time.time() + 1700
-    cookie = next(iter(server.jar))
-    assert cookie.name == "console" and cookie.has_nonstandard_attr("HttpOnly")
+    cookie = next(c for c in server.jar if c.name == "console")
+    assert cookie.has_nonstandard_attr("HttpOnly")
     st, body = server.call("/api/action", {"action": "restart", "target": "agent-runner"})
     assert st == 200, body
     assert "docker restart --time 60 agent-runner" in calls(site)
@@ -111,6 +111,24 @@ def test_password_session_and_lock(server, site):
     audit = [json.loads(line) for line in site["log"].read_text().splitlines()]
     assert [a["action"] for a in audit if a.get("via") == "web"] == ["unlock", "unlock"]
     assert [a["exit"] for a in audit if a["action"] == "unlock"] == [1, 0]
+
+
+def test_unlocking_here_unlocks_the_other_consoles_but_not_the_reverse(server, site):
+    """One unlock (owner 2026-11-08): the shared cookie the media-library and finance consoles check, signed with a key
+    from the password file. This console never takes it for its own actions."""
+    import hmac
+    assert server.call("/api/unlock", {"password": PASSWORD})[0] == 200
+    shared = next(c for c in server.jar if c.name == "console_unlock")
+    assert shared.has_nonstandard_attr("HttpOnly") and shared.path == "/"
+    v, first, until, nonce, mac = shared.value.split(".")
+    key = hmac.new(site["password"].read_bytes().strip(), b"console-unlock-v1", hashlib.sha256).digest()
+    want = base64.urlsafe_b64encode(hmac.new(key, f"{v}.{first}.{until}.{nonce}".encode(), hashlib.sha256).digest()).rstrip(b"=").decode()
+    assert v == "v1" and hmac.compare_digest(mac, want) and int(until) - int(first) == 1800
+    server.jar.clear(domain=next(iter(server.jar)).domain, path="/", name="console")      # only the shared one left
+    assert [c.name for c in server.jar] == ["console_unlock"]
+    assert server.call("/api/action", {"action": "restart", "target": "agent-runner"})[0] == 401
+    assert server.call("/api/lock", {})[0] == 200
+    assert not [c for c in server.jar if c.name == "console_unlock"]                       # Lock here locks them too
 
 
 def test_cross_site_requests_are_refused(server):

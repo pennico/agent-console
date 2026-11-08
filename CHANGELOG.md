@@ -2,6 +2,13 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+- **Unlocking here unlocks the other consoles on this host** that read the
+  same password file (media-library, for one): the unlock also sets a signed
+  cookie they accept, and Lock clears it. This console never takes that cookie
+  for its own actions: only its own unlock opens them.
+
 ## [0.2.0] - 2026-10-25
 
 - **New layout, after media-library.**
