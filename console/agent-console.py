@@ -114,8 +114,10 @@ RESTART_INFISICAL = cfg("infisical", "restart", ["sudo", "-n", "/usr/bin/systemc
 _busy = threading.Lock()
 SESSION_S = int(os.environ.get("CONSOLE_SESSION_S", "1800"))   # unlock lasts 30 minutes
 _sessions = {}          # session token -> expiry (epoch); in memory, so a restart locks everyone
-_fails = []             # times of wrong keys, for the 5-per-10-minutes limit
+_fails = []             # times of wrong passwords, for the 5-per-10-minutes limit (passkeys are not limited by it)
+_inflight = 0           # password checks running now; they count as failures until they end
 _sessions_lock = threading.Lock()
+LOCKED = "Too many wrong passwords. Try again in 10 minutes, or use Touch ID / Face ID."
 
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 CRON_EXPR = re.compile(r"^[0-9*/,-]+( [0-9*/,-]+){4}$")
@@ -471,6 +473,27 @@ def shared_unlock(now=None):
     return body + "." + b64u(hmac.new(key, body.encode(), hashlib.sha256).digest())
 
 
+def begin_try():
+    """Check the password lockout and reserve one try in one step, so parallel wrong passwords cannot get past five
+    checks; False = locked out. Every True must be followed by end_try."""
+    global _inflight
+    now = time.time()
+    with _sessions_lock:
+        _fails[:] = [t for t in _fails if now - t < 600]
+        if len(_fails) + _inflight >= 5:
+            return False
+        _inflight += 1
+        return True
+
+
+def end_try(ok):
+    global _inflight
+    with _sessions_lock:
+        _inflight -= 1
+        if not ok:
+            _fails.append(time.time())
+
+
 def check_password(pw):
     try:
         with open(PASSWORD_FILE) as fh:
@@ -810,16 +833,11 @@ class Handler(BaseHTTPRequestHandler):
             self.audit_web("passkey-remove", 0 if len(left) < len(keys) else 1, "")
             return self.send(200, {"ok": True, "count": len(left)})
         if op == "login":
-            now = time.time()
-            with _sessions_lock:
-                _fails[:] = [t for t in _fails if now - t < 600]
-                if len(_fails) >= 5:
-                    return self.send(429, {"error": "Too many failed tries. Try again in 10 minutes."})
+            # Not held back by the password lockout, and a refusal does not count towards it: each try needs a fresh
+            # single-use challenge and a signature only the device can make (owner 2026-11-08, as in the other consoles).
             try:
                 k = login_passkey(req)
             except (ValueError, KeyError, TypeError) as e:
-                with _sessions_lock:
-                    _fails.append(now)
                 self.audit_web("unlock-passkey", 1, "")
                 return self.send(401, {"error": f"Touch ID / Face ID didn't verify: {e}."})
             self.audit_web("unlock-passkey", 0, k["name"])
@@ -847,21 +865,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, {"ok": True, "expires_at": now + SESSION_S}, cookie=cookies)
 
     def unlock(self, req):
-        """Trade the password for a session cookie that expires after SESSION_S."""
-        now = time.time()
-        with _sessions_lock:
-            _fails[:] = [t for t in _fails if now - t < 600]
-            if len(_fails) >= 5:
-                return self.send(429, {"error": "Too many wrong passwords. Try again in 10 minutes."})
-        ok = check_password(str(req.get("password", "")))
+        """Trade the password for a session cookie that expires after SESSION_S. Five wrong passwords in ten minutes
+        lock the password for ten minutes, not the passkeys."""
+        if not begin_try():
+            return self.send(429, {"error": LOCKED})
+        ok = False
+        try:
+            ok = check_password(str(req.get("password", "")))
+        finally:
+            end_try(ok)
         try:
             runner_call({"op": "audit", "entry": {"action": "unlock", "exit": 0 if ok else 1,
                                                   "login": self.headers.get("Tailscale-User-Login", "")}}, 10)
         except OSError:
             pass
         if not ok:
-            with _sessions_lock:
-                _fails.append(now)
             return self.send(401, {"error": "Wrong password."})
         self.start_session()
 

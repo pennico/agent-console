@@ -44,7 +44,9 @@ include chat titles, issue numbers and your catalog's descriptions.
   without a CORS preflight that the server never answers.
 - **A same-origin `Origin`.**
 
-Five failed unlocks block unlocking for 10 minutes. Every unlock and action
+Five wrong passwords in 10 minutes block the password for 10 minutes; a
+passkey still unlocks (its refusals do not count: each try needs a fresh
+single-use challenge and the device's signature). Every unlock and action
 is written to the audit log.
 
 **What it can do.** The web side runs in a container with:

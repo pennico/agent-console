@@ -149,6 +149,15 @@ def test_five_wrong_passwords_lock_unlocking(server):
     assert server.call("/api/unlock", {"password": PASSWORD})[0] == 429
 
 
+def test_parallel_wrong_passwords_check_at_most_five(server):
+    """The lockout check and the try are one step: twenty wrong passwords at once get at most five checks."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(20) as pool:
+        codes = list(pool.map(lambda _: server.call("/api/unlock", {"password": "wrong"})[0], range(20)))
+    assert codes.count(401) <= 5 and codes.count(401) + codes.count(429) == 20, codes
+    assert server.call("/api/unlock", {"password": PASSWORD})[0] == 429
+
+
 # ---- passkeys: a software authenticator (ES256, "none" attestation) ----
 
 cryptography = pytest.importorskip("cryptography")
@@ -232,4 +241,20 @@ def test_passkey_unlock_and_its_failures(server, site):
     assert server.call("/api/passkey/login", auth.assertion(flags=0x01, counter=9))[0] == 401   # no user verification
     assert server.call("/api/passkey/login", auth.assertion(counter=9, origin="https://evil.test"))[0] == 401
     assert server.call("/api/passkey/login", auth.assertion(counter=9, forge=True))[0] == 401
-    assert server.call("/api/passkey/login", auth.assertion(counter=9))[0] == 429          # five failures
+    st, body = server.call("/api/passkey/login", auth.assertion(counter=9))   # five refusals lock nothing
+    assert st == 200, body
+    assert server.call("/api/unlock", {"password": PASSWORD})[0] == 200
+
+
+def test_a_passkey_unlocks_during_a_password_lockout(server, site):
+    auth = Authenticator(server)
+    server.call("/api/unlock", {"password": PASSWORD})
+    assert auth.register()[0] == 200
+    server.call("/api/lock", {})
+    for _ in range(5):
+        assert server.call("/api/unlock", {"password": "wrong"})[0] == 401
+    st, body = server.call("/api/unlock", {"password": PASSWORD})
+    assert st == 429 and "Touch ID" in body["error"]
+    st, body = server.call("/api/passkey/login", auth.assertion(counter=2))
+    assert st == 200, body
+    assert server.call("/api/unlock", {"password": PASSWORD})[0] == 429      # the password stays locked

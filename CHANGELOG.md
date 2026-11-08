@@ -4,6 +4,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+- **Touch ID / Face ID still unlocks after five wrong passwords**: the
+  ten-minute lockout now holds back only the password, and a refused passkey
+  does not count towards it (the same in media-library and the finance
+  console). Parallel wrong passwords can no longer get past five checks.
 - **Unlocking here unlocks the other consoles on this host** that read the
   same password file (media-library, for one): the unlock also sets a signed
   cookie they accept, and Lock clears it. This console never takes that cookie
