@@ -4,6 +4,18 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+- **The Telegram bridge can run in its own container**: `[runner] bridge_container`
+  (and `bridge_state` for its state file) makes the console read that container
+  for the bridge's status, place and log command, instead of a process inside
+  the runner.
+- **job-bot without a mail monitor or Telegram chat**: `[jobbot] mail_monitor =
+  false` and `chat = false` leave those parts out of the Agents and Schedules
+  views. `[jobbot] last_run_file` gives the last run time when the container log
+  no longer has it (a recreated container starts with an empty log).
+- **Overwatch "last run" shows again**: read from `systemctl list-timers`
+  (microseconds); `systemctl show` prints it as a local date, which read as no run.
+- The bridge "drains the notification spool" (wording left from ntfy).
+
 - **Touch ID / Face ID still unlocks after five wrong passwords**: the
   ten-minute lockout now holds back only the password, and a refused passkey
   does not count towards it (the same in media-library and the finance

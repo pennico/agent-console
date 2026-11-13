@@ -42,6 +42,7 @@ def test_schedules(status):
     assert status["job_bot"]["run_at"] == "07:30" and status["job_bot"]["next_run"] == "2026-10-24 07:30:00"
     daily = status["overwatch"]["tiers"][0]
     assert daily["calendar"] == "*-*-* 07:00:00" and daily["enabled"] and daily["next"]
+    assert daily["last"] == 1761300000                          # from list-timers: show prints a local date string
 
 
 def test_chats(status):
@@ -145,3 +146,32 @@ def test_missing_sources_show_as_unknown_not_a_crash(site, tmp_path, monkeypatch
     status = json.loads((web / "status.json").read_text())
     assert status["agent_runner"]["container"]["state"] == "unknown"
     assert status["agent_runner"]["workers"] == [] and status["infisical"]["readable"] is False
+
+
+def test_bridge_container_and_job_bot_without_optional_parts(site, monkeypatch):
+    """A site with the bridge in its own container and a job-bot with no mail monitor or chat."""
+    state = site["root"] / "bridge-state.json"; state.write_text("{}")
+    run_file = site["root"] / "seen_jobs.json"; run_file.write_text("{}")
+    cfg = site["config"].read_text()
+    cfg = cfg.replace('[runner]\n', f'[runner]\nbridge_container = "telegram-bridge"\nbridge_state = "{state}"\n')
+    cfg = cfg.replace('[jobbot]\n', f'[jobbot]\nmail_monitor = false\nchat = false\nlast_run_file = "{run_file}"\n')
+    site["config"].write_text(cfg)
+    monkeypatch.setenv("FAKE_NO_LOGS", "1")
+    r = subprocess.run([sys.executable, str(CONSOLE / "agent-status.py")], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    status = json.loads((site["web"] / "status.json").read_text())
+    br = status["agent_runner"]["bridge"]
+    assert br["running"] and br["container"]["name"] == "telegram-bridge" and br["last_activity"]
+    jb = status["job_bot"]
+    assert jb["mail_interval_s"] is None and jb["chat"] is False and jb["last_run"]   # last run from the file's mtime
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    r = subprocess.run(["node", str(ROOT / "tests" / "page_smoke.js"), str(ROOT / "console" / "index.html"),
+                        str(site["web"] / "status.json")], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout)
+    agents = {i["id"]: i for i in out["agents:location"]}
+    assert "gmail" not in agents and "jb-chat" not in agents
+    assert agents["bridge"]["where"].startswith("container · telegram-bridge")
+    sched = {i["id"] for i in out["schedules:location"]}
+    assert "sch-gmail" not in sched and "sch-jbchat" not in sched and "sch-bridge" in sched

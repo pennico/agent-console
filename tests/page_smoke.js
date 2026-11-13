@@ -25,7 +25,7 @@ setTimeout(() => {
   const out = {};
   for (const [v, m] of [["agents", "location"], ["agents", "roles"], ["schedules", "location"], ["connections", "location"]]) {
     view = v; agentsMode = m; render(true);
-    out[v + ":" + m] = items.map(i => ({id: i.id, name: i.name, section: i.section, status: i.status, head: i.head}));
+    out[v + ":" + m] = items.map(i => ({id: i.id, name: i.name, section: i.section, status: i.status, head: i.head, where: i.where}));
     for (const it of items) { sel[SK()] = it.id; renderDetail(); }
   }
   out.search = buildSearchIndex().length;

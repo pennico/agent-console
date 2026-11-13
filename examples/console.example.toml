@@ -28,6 +28,8 @@ template = "agent-runner"                       # Infisical template name for th
 ops_repo = "ops"                                # the project whose worker runs the overseer
 projects_fallback = []                          # project names to show when the supervisor can't be read
 app_decommissioned = []                         # projects whose app is retired but whose pipelines still run
+# bridge_container = "telegram-bridge"          # the Telegram bridge in its own container (default: inside the runner)
+# bridge_state = "/srv/agent-runner/telegram-bridge-state/telegram-bridge-state.json"
 mode_command = "~/agents-mode"                  # host script that switches the backend mode
 # container_projects = "/app/projects"          # paths inside the runner container
 # container_supervisor = "/app/supervisor.py"
@@ -40,6 +42,9 @@ container = "job-bot"
 env = "/srv/job-bot/.env"
 template = "job-bot"
 # run_window = ["06:45", "07:45"]               # block manual runs and restarts next to the scheduled run
+# mail_monitor = false                          # job-bot has no mail monitor: leave it out of the views
+# chat = false                                  # job-bot has no Telegram chat
+# last_run_file = "/srv/job-bot/data/seen_jobs.json"   # its mtime = last run when the container log has none
 
 [claude]
 container = "claude-agent"

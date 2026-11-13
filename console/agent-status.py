@@ -53,6 +53,14 @@ RUNNER_CT = cfg("runner", "container", "agent-runner")
 OPS_REPO = cfg("runner", "ops_repo", "ops")          # the project that runs the overseer
 JOBBOT_CT = cfg("jobbot", "container", "job-bot")
 JOBBOT_ENV = os.environ.get("JOBBOT_ENV", cfg("jobbot", "env", "/srv/job-bot/.env"))
+# Optional job-bot parts: a site whose job-bot has no mail monitor or no Telegram chat turns them off.
+JOBBOT_MAIL = cfg("jobbot", "mail_monitor", True)
+JOBBOT_CHAT = cfg("jobbot", "chat", True)
+# A file the daily run rewrites; its mtime stands in for the last run when the container log
+# no longer has it (a recreated container starts with an empty log).
+JOBBOT_RUN_FILE = cfg("jobbot", "last_run_file")
+# The Telegram bridge may run in its own container (same image) instead of inside the runner.
+BRIDGE_CT = cfg("runner", "bridge_container")
 CLAUDE_CT = cfg("claude", "container", "claude-agent")
 # Host cron jobs the console shows and can change: id -> text that identifies the line.
 CRON_JOBS = {k: v.get("match", k) for k, v in (CFG.get("cron") or {}).items() if isinstance(v, dict)}
@@ -349,7 +357,8 @@ def agent_runner():
     ops = sessions(os.path.join(PROJECTS, OPS_REPO))
     overseer = [s for s in ops if s["role"] == "overseer"]
     budget = read_json(os.path.join(PROJECTS, ".session-budget.json")) or {}
-    bridge_state = os.path.join(PROJECTS, ".telegram-bridge-state.json")
+    bridge_state = cfg("runner", "bridge_state") or os.path.join(PROJECTS, ".telegram-bridge-state.json")
+    bridge_ct = container(BRIDGE_CT) if BRIDGE_CT else None
     return {
         "container": container(RUNNER_CT),
         **runner_settings(),
@@ -361,7 +370,8 @@ def agent_runner():
         "overseer": {"last": overseer[0] if overseer else None,
                      "running": has_proc(procs, "run-overseer") or bool(overseer and overseer[0]["running"]),
                      "recent": overseer[:5]},
-        "bridge": {"running": has_proc(procs, "telegram_bridge"),
+        "bridge": {"running": (bridge_ct or {}).get("state") == "running" if bridge_ct else has_proc(procs, "telegram_bridge"),
+                   "container": bridge_ct,
                    "last_activity": os.path.getmtime(bridge_state) if os.path.exists(bridge_state) else None},
         "memory": {"running": has_proc(procs, "agent_memory") or has_proc(procs, "memory")},
         "workflows": workflows(),
@@ -384,17 +394,22 @@ def job_bot():
     m_new = re.match(r"\[run\] (\d+) new of (\d+)", last_new or "")
     m_next = re.search(r"next run at (\S+ \S+)", next_run or "")
     env = env_keys(JOBBOT_ENV, {"RUN_AT", "EMAIL_CHECK_INTERVAL_S", "TZ"})
+    last_run = m_start.group(1) if m_start else None
+    if not last_run and JOBBOT_RUN_FILE and os.path.exists(JOBBOT_RUN_FILE):
+        last_run = dt.datetime.fromtimestamp(os.path.getmtime(JOBBOT_RUN_FILE), TZ).isoformat(timespec="seconds")
     return {
         "container": c,
         "run_at": env.get("RUN_AT", "07:00"),
-        "mail_interval_s": int(env.get("EMAIL_CHECK_INTERVAL_S", "3600") or 0),
+        # None = this site's job-bot has no mail monitor (the page leaves it out)
+        "mail_interval_s": int(env.get("EMAIL_CHECK_INTERVAL_S", "3600") or 0) if JOBBOT_MAIL else None,
+        "chat": bool(JOBBOT_CHAT),
         "tz": env.get("TZ", cfg("site", "timezone", "UTC")),
-        "last_run": m_start.group(1) if m_start else None,
+        "last_run": last_run,
         "last_run_new": int(m_new.group(1)) if m_new else None,
         "last_run_seen": int(m_new.group(2)) if m_new else None,
         "next_run": m_next.group(1) if m_next else None,
         "last_failure": failed[len("[daemon] run failed: "):][:160] if failed else None,
-        "mail_check_failures_recent": mail_fail,
+        "mail_check_failures_recent": mail_fail if JOBBOT_MAIL else None,
     }
 
 
@@ -495,6 +510,9 @@ def overwatch():
             rows = json.loads(nxt) if nxt else []
             if rows and rows[0].get("next"):
                 tiers[-1]["next"] = rows[0]["next"] / 1e6
+            # `systemctl show` gives LastTriggerUSec as a local date string; list-timers has it in µs
+            if rows and rows[0].get("last"):
+                tiers[-1]["last"] = rows[0]["last"] / 1e6
         except (ValueError, TypeError, KeyError):
             pass
     return {"tiers": tiers}
