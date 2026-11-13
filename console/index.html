@@ -706,16 +706,19 @@ function build(d) {
     links: [["Status reports", gh(OPS(), "/issues?q=is%3Aissue+%22Status+report%22"), "Where each report is posted"]],
     cmds: [["Latest overseer output", `ls -t ${P}/${OPS()}/dispatcher/logs/*overseer* | head -3`]]});
 
-  out.push({id: "bridge", section: R, child: true, name: "Telegram bridge", status: cs !== "up" ? inherit(cs) : ar.bridge.running ? "up" : "down",
-    sub: ar.bridge.running ? "listening" : "not running", time: ar.bridge.last_activity, where: R + " · long-running",
+  // the bridge runs inside the runner, or in its own container (bridge.container is then set)
+  const bc = ar.bridge.container, BR = bc && bc.name, bcs = BR ? containerStatus(bc) : cs;
+  out.push({id: "bridge", section: R, child: true, name: "Telegram bridge", status: bcs !== "up" ? inherit(bcs) : ar.bridge.running ? "up" : "down",
+    sub: ar.bridge.running ? "listening" : "not running", time: ar.bridge.last_activity, where: (BR ? "container · " + BR : R) + " · long-running",
     head: "Two-way phone channel for the agent loop. GitHub issues stay the record; Telegram is the front-end.",
     tags: {cadence: ["on", "long-running"], models: modelTags(be, ["chat"]), conns: ["Telegram", "GitHub"]},
-    schedule: {now: "Continuous", state: cs === "up" && ar.bridge.running ? "on" : "off", src: "polls the notification topic and long-polls the Telegram Bot API",
-      extra: ["Stops and starts with " + R + "."], ctrls: [arStop]},
-    body: `<div class="facts">${fact("Process", ar.bridge.running ? '<span class="ok">running</span>' : '<span class="bad">not running</span>')}${fact("Last state write", esc(ago(ar.bridge.last_activity)))}</div>`,
-    acts: [{label: "Restart " + R, action: "restart", target: R, danger: true, note: "The bridge restarts with the container; running sessions stop gently and resume on the next tick."}],
+    schedule: {now: "Continuous", state: bcs === "up" && ar.bridge.running ? "on" : "off", src: "drains the notification spool and long-polls the Telegram Bot API",
+      extra: [BR ? "Own container " + BR + "; agent work it starts runs in " + R + "." : "Stops and starts with " + R + "."], ctrls: BR ? [] : [arStop]},
+    body: `<div class="facts">${BR ? containerFacts(bc) : fact("Process", ar.bridge.running ? '<span class="ok">running</span>' : '<span class="bad">not running</span>')}${fact("Last state write", esc(ago(ar.bridge.last_activity)))}</div>`,
+    acts: BR ? [] : [{label: "Restart " + R, action: "restart", target: R, danger: true, note: "The bridge restarts with the container; running sessions stop gently and resume on the next tick."}],
     links: [Lk("botfather")],
-    cmds: [["Bridge lines in the log", `docker logs --tail 300 ${R} | grep -i bridge`]]});
+    cmds: BR ? [["Bridge log", `docker logs --tail 300 ${BR}`], ["Restart the bridge (queued notifications wait in the spool)", `docker restart ${BR}`]]
+      : [["Bridge lines in the log", `docker logs --tail 300 ${R} | grep -i bridge`]]});
 
   out.push({id: "memory", section: R, child: true, name: "agent-memory", status: cs !== "up" ? inherit(cs) : ar.memory.running ? "up" : "down",
     sub: "SQLite store · loopback only", where: R + " · long-running",
@@ -726,7 +729,9 @@ function build(d) {
 
   const jb = d.job_bot, js = containerStatus(jb.container);
   const tz = jb.tz || SITE().timezone || "UTC";
-  const jbStop = containerCtrl(J, jb.container, "Stopping " + J + " also stops its Telegram chat and the mail monitor.");
+  const jbMail = jb.mail_interval_s !== null, jbChat = jb.chat !== false;   // optional parts, off per site
+  const jbParts = [jbChat && "its Telegram chat", jbMail && "the mail monitor"].filter(Boolean);
+  const jbStop = containerCtrl(J, jb.container, jbParts.length ? "Stopping " + J + " also stops " + jbParts.join(" and ") + "." : "");
   out.push({id: "job-bot", lid: "container:" + J, section: J, name: "Daily job search", status: js === "up" && jb.last_failure ? "attention" : js,
     sub: jb.next_run ? "next run " + jb.next_run.slice(0, 16) : "Mon–Fri " + (jb.run_at || "—"), time: jb.last_run ? Date.parse(jb.last_run) / 1000 : null, where: "container · " + J,
     head: "Scheduled job-search daemon: scans postings, scores them and prepares applications. Reports through its own Telegram bot.",
@@ -741,7 +746,7 @@ function build(d) {
     links: [Lk("claudeUsage")],
     cmds: [["Last run report", `docker logs --tail 120 ${J}`], ["Restart", `docker restart ${J}`]]});
   const mail = jb.mail_interval_s ?? 3600;
-  out.push({id: "gmail", section: J, child: true, name: "Mail status monitor", status: js !== "up" ? inherit(js) : !mail ? "dormant" : jb.mail_check_failures_recent ? "attention" : "up",
+  if (jbMail) out.push({id: "gmail", section: J, child: true, name: "Mail status monitor", status: js !== "up" ? inherit(js) : !mail ? "dormant" : jb.mail_check_failures_recent ? "attention" : "up",
     sub: !mail ? "turned off" : jb.mail_check_failures_recent ? jb.mail_check_failures_recent + " recent failures" : intervalHuman(mail).toLowerCase() + " · no errors", where: J + " · " + intervalHuman(mail).toLowerCase(),
     head: "Reads application mail and updates the tracker. Keyword rules, no model.",
     tags: {cadence: mail ? ["sched", intervalHuman(mail).toLowerCase()] : ["off", "off"], conns: ["Gmail", "Nextcloud"]},
@@ -750,7 +755,7 @@ function build(d) {
     body: `<div class="facts">${fact("Recent check failures", jb.mail_check_failures_recent)}</div>`,
     acts: [{label: "Restart " + J, action: "restart", target: J, danger: true, note: "The monitor runs inside the " + J + " daemon."}],
     cmds: [["Failures in the log", `docker logs --since 24h ${J} | grep 'email status'`]]});
-  out.push({id: "jb-chat", section: J, child: true, name: "Telegram chat", status: js,
+  if (jbChat) out.push({id: "jb-chat", section: J, child: true, name: "Telegram chat", status: js,
     sub: "card buttons and commands", where: J + " · on demand",
     head: J + "'s own Telegram bot, separate from the agent bridge. It prepares applications; you submit them.",
     tags: {cadence: ["on", "on demand"], models: [["claude", "Claude"]], conns: ["Telegram"]},
@@ -967,11 +972,12 @@ function buildSchedules(d, agents) {
     head: "Stays connected so you can open a chat from the phone at any time; restarted when it exits.",
     tags: rc.tags, schedule: rc.schedule, occ: {kind: "continuous"}, links: rc.links, cmds: rc.cmds});
   const br = it("bridge");
-  sch({id: "sch-bridge", group: "Always on", name: "Telegram bridge", sub: R + " · polls notifications + Telegram", agent: "bridge",
-    where: R, defined: "started by the supervisor", status: upOr(br.status), head: br.head, tags: br.tags, schedule: br.schedule,
+  const brC = ar.bridge.container && ar.bridge.container.name;
+  sch({id: "sch-bridge", group: "Always on", name: "Telegram bridge", sub: (brC || R) + " · notification spool + Telegram", agent: "bridge",
+    where: brC || R, defined: brC ? "its own container " + brC : "started by the supervisor", status: upOr(br.status), head: br.head, tags: br.tags, schedule: br.schedule,
     occ: {kind: "continuous"}, links: br.links, cmds: br.cmds});
   const jc = it("jb-chat");
-  sch({id: "sch-jbchat", group: "Always on", name: J + " Telegram chat", sub: J + " · between runs", agent: "jb-chat",
+  if (d.job_bot.chat !== false) sch({id: "sch-jbchat", group: "Always on", name: J + " Telegram chat", sub: J + " · between runs", agent: "jb-chat",
     where: J, defined: J + " daemon (long-polls Telegram)", status: upOr(jc.status), head: jc.head, tags: jc.tags, schedule: jc.schedule,
     occ: {kind: "continuous"}, links: jc.links, cmds: jc.cmds});
 
@@ -985,7 +991,7 @@ function buildSchedules(d, agents) {
       extra: ["Pause a single project from its row in Agents → By location."]},
     occ: {kind: "interval", label: "every 5 min"}, links: arIt.links, cmds: [["Follow the supervisor log", `docker logs -f --tail 100 ${R}`]]});
   const gm = it("gmail"), mail = jb.mail_interval_s ?? 3600;
-  sch({id: "sch-gmail", group: "Frequent", name: gm.name, sub: intervalHuman(mail) + " · " + J, agent: "gmail",
+  if (jb.mail_interval_s !== null) sch({id: "sch-gmail", group: "Frequent", name: gm.name, sub: intervalHuman(mail) + " · " + J, agent: "gmail",
     where: J, defined: "EMAIL_CHECK_INTERVAL_S in " + J + "'s .env", status: upOr(gm.status), head: gm.head, tags: gm.tags, schedule: gm.schedule,
     occ: {kind: "interval", label: intervalHuman(mail).toLowerCase()}, links: gm.links, cmds: gm.cmds});
 

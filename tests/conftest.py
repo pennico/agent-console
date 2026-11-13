@@ -40,6 +40,8 @@ elif a[:1] == ["top"]:
         print("201 bash rc-loop.sh\n202 claude remote-control --name test\n203 claude")
 elif a[:2] == ["ps", "-a"]:
     print("running\nrunning\nexited\nrunning")
+elif a[:1] == ["logs"] and os.environ.get("FAKE_NO_LOGS"):
+    pass                                      # a freshly recreated container
 elif a[:1] == ["logs"]:
     print("[run] start 2026-10-23T07:30:00\n[run] 4 new of 120\n[daemon] next run at 2026-10-24 07:30:00")
 elif a[:2] == ["exec", "agent-runner"] and "grep" in a:
@@ -68,14 +70,15 @@ import json, os, sys
 a = sys.argv[1:]
 open(os.environ["FAKE_CALLS"], "a").write("systemctl " + " ".join(a) + "\n")
 if a[:1] == ["show"]:
-    unit = a[1]
+    unit = next(x for x in a[1:] if not x.startswith("-"))
+    last = "Fri 2026-10-24 12:00:00 CEST"      # systemd prints it as a local date, not a number
     if unit.endswith(".timer"):
-        print("ActiveState=active\nUnitFileState=enabled\nLastTriggerUSec=1761300000000000\n"
+        print("ActiveState=active\nUnitFileState=enabled\nLastTriggerUSec=" + last + "\n"
               "TimersCalendar={ OnCalendar=*-*-* 07:00:00 ; next_elapse=Sat 2026-10-25 07:00:00 CEST }")
     elif unit.endswith(".service"):
         print("Result=success\nExecMainStatus=0\nActiveState=inactive")
 elif a[:1] == ["list-timers"]:
-    print(json.dumps([{"next": 1761400000000000}]))
+    print(json.dumps([{"next": 1761400000000000, "last": 1761300000000000}]))
 '''
 
 

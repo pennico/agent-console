@@ -21,8 +21,8 @@ Two files, both outside the code and both free of secret values:
 | `[site]` | all | `timezone` (dispatcher log names and job times use it), `github_owner` (repo links), `catalog` path, `disks` (mount points shown in the Account box) |
 | `[paths]` | collector, page | `web`: where `index.html`, `status.json` and `ledger.json` live; `install`: shown in commands |
 | `[console]` | web side, runner, terminal | runner socket, passkey file, audit log, password file, collector path (run after each action) |
-| `[runner]` | collector, runner | the runner's checkout (`dir`, `projects`), container name, its Infisical template name, the project that runs the overseer (`ops_repo`), the backend switch script (`mode_command`), `app_decommissioned`, `[runner.activity]` evidence files |
-| `[jobbot]` | collector, runner | container, `.env`, template name, `run_window` that blocks manual runs next to the scheduled one |
+| `[runner]` | collector, runner | the runner's checkout (`dir`, `projects`), container name, its Infisical template name, the project that runs the overseer (`ops_repo`), the backend switch script (`mode_command`), `app_decommissioned`, `[runner.activity]` evidence files, `bridge_container` + `bridge_state` when the Telegram bridge runs in its own container |
+| `[jobbot]` | collector, runner | container, `.env`, template name, `run_window` that blocks manual runs next to the scheduled one, `mail_monitor` / `chat` (false hides those parts), `last_run_file` (its mtime = last run when the log has none) |
 | `[claude]` | collector | container name and the transcripts folder |
 | `[infisical]` | collector, runner | templates folder, agent config, unit name, the restart command, extra setting names whose values may be shown |
 | `[overwatch]` | collector, runner, terminal | timer tiers and the unit prefix (`<prefix><tier>.timer`) |
