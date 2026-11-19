@@ -135,7 +135,7 @@ def finish(code):
 
 
 def main(argv):
-    print(f"{BOLD}Agent console · change that needs sudo{OFF}\n")
+    print(f"{BOLD}Agent console · {'terminal' if argv[:1] == ['run'] else 'change that needs sudo'}{OFF}\n")
     if len(argv) < 2 or argv[0] not in ACTIONS:
         print(f"{RED}Unknown or missing action. Open this terminal from a console button.{OFF}")
         finish(2)
