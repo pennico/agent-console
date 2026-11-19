@@ -61,6 +61,20 @@ show_values = []                                # extra setting names whose valu
 tiers = []                                      # example: ["daily", "weekly"] for overwatch-daily.timer, …
 unit_prefix = "overwatch-"
 
+# Your own commands for the console terminal (optional). A link to
+#   https://<server>:<terminal port>/?arg=run&arg=<name>
+# opens the terminal on that command: it runs `preview` (read-only, no sudo), prints
+# `notes` and every step, asks y/N, then runs the steps; sudo asks your password there.
+# Fixed argv lists only: nothing from the URL reaches a command. Keep this file root-owned.
+# [terminal.commands.apt-upgrade]
+# what = "Install the waiting package updates"
+# preview = ["apt", "list", "--upgradable"]
+# notes = ["Services restart as their packages need."]
+# steps = [
+#   { argv = ["sudo", "apt-get", "update"], why = "refresh the package lists" },
+#   { argv = ["sudo", "apt-get", "upgrade"], why = "install the updates (apt asks before it starts)" },
+# ]
+
 # Host cron jobs the console shows and can reschedule or pause (one table per job).
 # [cron.nightly-backup]
 # match = "nightly-backup.sh"                   # text that identifies the crontab line

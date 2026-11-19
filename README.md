@@ -89,7 +89,9 @@ Across the page:
 - **Console terminal** (`term.py` under ttyd, optional) handles changes that
   need sudo, such as systemd timers. It shows the exact commands, asks for
   confirmation, and sudo asks for your password there. No passwordless sudo
-  is needed.
+  is needed. Your own commands can be added in the config
+  (`[terminal.commands.<name>]`, opened with `?arg=run&arg=<name>`), for
+  example an "install updates" button on a dashboard.
 
 See [SECURITY.md](SECURITY.md) for the full security model.
 

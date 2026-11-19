@@ -65,6 +65,8 @@ import os, sys
 open(os.environ["FAKE_CALLS"], "a").write(os.path.basename(sys.argv[0]) + " " + " ".join(sys.argv[1:]) + "\n")
 '''
 
+FAKE_PLAN = FAKE_LOGGER + 'print("PLAN: 2 packages")\n'   # a site command's read-only preview
+
 FAKE_SYSTEMCTL = r'''#!/usr/bin/env python3
 import json, os, sys
 a = sys.argv[1:]
@@ -96,6 +98,7 @@ def site(tmp_path, monkeypatch):
     _exe(bin_ / "docker", FAKE_DOCKER)
     _exe(bin_ / "crontab", FAKE_CRONTAB)
     _exe(bin_ / "systemctl", FAKE_SYSTEMCTL)
+    _exe(bin_ / "plan-updates", FAKE_PLAN)
     for name in ("sudo", "systemd-analyze", "agents-mode", "infisical-restart"):
         _exe(bin_ / name, FAKE_LOGGER)
 
@@ -193,6 +196,18 @@ def site(tmp_path, monkeypatch):
         restart = ["{bin_}/infisical-restart"]
         [overwatch]
         tiers = ["daily", "weekly"]
+        [terminal.commands.upgrade]
+        what = "Install the waiting updates"
+        preview = ["{bin_}/plan-updates"]
+        notes = ["Docker restarts every container"]
+        steps = [{{argv = ["sudo", "apt-get", "upgrade"], why = "install them"}}]
+        [terminal.commands.bad-preview]
+        preview = ["false"]
+        steps = [{{argv = ["sudo", "reboot"]}}]
+        [terminal.commands.no-steps]
+        steps = "rm -rf /"
+        [terminal.commands."Bad Name"]
+        steps = [{{argv = ["sudo", "reboot"]}}]
         [cron.nightly-backup]
         match = "nightly-backup.sh"
         project = "alpha"

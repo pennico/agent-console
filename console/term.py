@@ -8,6 +8,13 @@ asks for confirmation, and lets sudo ask for the owner's password in the
 terminal. The password is typed only here and never stored. Anything else
 is refused.
 
+Besides the built-in Overwatch actions, the site's config can define its own
+commands under [terminal.commands.<name>] (action "run", target <name>):
+fixed argv lists only, never a shell or a value from the URL. A command may
+have a read-only `preview` that runs before the y/N question (to show what
+would change) and `notes` printed with the plan. The config file is owned by
+root, so only the owner can add a command.
+
   ttyd --interface lo --port 8098 --writable --url-arg ... python3 term.py
 
 Overwatch tiers and the unit prefix come from the same TOML config as the
@@ -42,6 +49,7 @@ COLLECTOR = os.environ.get("CONSOLE_COLLECTOR", CFG.get("console", {}).get("coll
 TIERS = tuple(CFG.get("overwatch", {}).get("tiers", ()))
 UNIT = CFG.get("overwatch", {}).get("unit_prefix", "overwatch-")
 CALENDAR = re.compile(r"[0-9A-Za-z*,:./~ -]{3,80}")
+NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,40}")
 BOLD, DIM, GREEN, RED, OFF = "\033[1m", "\033[2m", "\033[32m", "\033[31m", "\033[0m"
 
 
@@ -76,6 +84,35 @@ ACTIONS = {
 }
 
 
+def _is_argv(xs):
+    return isinstance(xs, list) and bool(xs) and all(isinstance(x, str) and x for x in xs)
+
+
+def _site_commands(cfg):
+    """[terminal.commands.<name>] -> {name: {what, steps, preview, notes}}; malformed entries are skipped."""
+    out = {}
+    for name, c in (cfg.get("terminal", {}).get("commands", {}) or {}).items():
+        if not (NAME.fullmatch(name) and isinstance(c, dict)):
+            continue
+        steps = c.get("steps") or []
+        if not (isinstance(steps, list) and steps and all(isinstance(st, dict) and _is_argv(st.get("argv")) for st in steps)):
+            continue
+        preview = c.get("preview")
+        if preview is not None and not _is_argv(preview):
+            continue
+        out[name] = {
+            "what": str(c.get("what") or f"Run {name}"),
+            "steps": [(list(st["argv"]), None, str(st.get("why") or "")) for st in steps],
+            "preview": list(preview) if preview else None,
+            "notes": [str(n) for n in (c.get("notes") or []) if isinstance(n, (str, int, float))],
+        }
+    return out
+
+
+COMMANDS = _site_commands(CFG)
+ACTIONS["run"] = (tuple(COMMANDS), None, lambda t, v: COMMANDS[t]["steps"], "{t}")
+
+
 def log(entry):
     try:
         with open(LOG, "a") as fh:
@@ -108,7 +145,20 @@ def main(argv):
         print(f"{RED}Refused: {action} {target!r} {value!r} doesn't match what this action allows.{OFF}")
         finish(2)
     steps = steps_of(target, value)
-    print(f"{BOLD}{what.format(t=target, v=value)}{OFF}\n\nThis will run:")
+    site = COMMANDS.get(target) if action == "run" else None
+    print(f"{BOLD}{(site['what'] if site else what.format(t=target, v=value))}{OFF}\n")
+    if site and site["preview"]:
+        print(f"{DIM}$ {quote(site['preview'])}{OFF}", flush=True)
+        r = subprocess.run(site["preview"])
+        if r.returncode != 0:
+            print(f"{RED}The preview failed (exit {r.returncode}); nothing was run.{OFF}")
+            finish(r.returncode)
+        print()
+    for note in (site["notes"] if site else []):
+        print(f"  • {note}")
+    if site and site["notes"]:
+        print()
+    print("This will run:")
     for cmd, stdin, why in steps:
         print(f"  {DIM}# {why}{OFF}\n  {quote(cmd)}" + (f"   {DIM}(input: {stdin.strip()!r}){OFF}" if stdin else ""))
     try:
