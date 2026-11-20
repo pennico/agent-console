@@ -68,7 +68,11 @@ one `KEY=value` line in an Infisical template, or one known line in the
 console user's crontab.
 
 **Changes that need sudo** go through the console terminal: ttyd on
-loopback, published by Tailscale Serve, requiring the login header. It runs
+loopback, published only by Tailscale Serve (tailnet only). It does not check
+the login header: Tailscale Serve does not send it on the websocket upgrade,
+so ttyd's `--auth-header` refuses every session. Anyone who can reach the
+terminal's Serve port can open it, so limit that port to your devices in the
+tailnet policy. It runs
 `term.py`, which has its own allow-list. It prints every command, asks for
 confirmation, and leaves the password prompt to sudo. The password is typed
 there and never stored. No passwordless sudo rules are required.
