@@ -4,6 +4,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+- **Your own commands in the console terminal**: `[terminal.commands.<name>]` in
+  the config (fixed argv steps, an optional read-only `preview` shown before
+  the y/N question, `notes`). Open one with `?arg=run&arg=<name>`, for example
+  from a dashboard button. Malformed entries are ignored; nothing from the URL
+  reaches a command.
+- **The console terminal works through Tailscale Serve**: the shipped unit no
+  longer passes `--auth-header Tailscale-User-Login` to ttyd. Serve does not
+  send that header on the websocket upgrade, so ttyd refused every session
+  ("Press ⏎ to Reconnect"). See SECURITY.md for what protects the terminal now.
 - **The Telegram bridge can run in its own container**: `[runner] bridge_container`
   (and `bridge_state` for its state file) makes the console read that container
   for the bridge's status, place and log command, instead of a process inside
