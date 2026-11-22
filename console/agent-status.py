@@ -47,6 +47,9 @@ def cfg(section, key, default=None):
 
 
 OUT = os.environ.get("AGENT_CONSOLE_OUT", cfg("paths", "web", "/var/lib/agent-console/web"))
+# The agent loop (runner container, workers, overseer, bridge, memory) is optional: a config
+# without a [runner] section has none, and the collector never reads its paths or containers.
+LOOP = isinstance(CFG.get("runner"), dict)
 RUNNER = os.environ.get("AGENT_RUNNER_DIR", cfg("runner", "dir", "/srv/agent-runner"))
 PROJECTS = os.environ.get("AGENT_PROJECTS_DIR", cfg("runner", "projects", RUNNER + "/projects"))
 RUNNER_CT = cfg("runner", "container", "agent-runner")
@@ -353,6 +356,9 @@ def workflows():
 
 
 def agent_runner():
+    """The agent loop's state, or None when this site has no [runner] section."""
+    if not LOOP:
+        return None
     procs = processes(RUNNER_CT)
     ops = sessions(os.path.join(PROJECTS, OPS_REPO))
     overseer = [s for s in ops if s["role"] == "overseer"]
@@ -375,7 +381,6 @@ def agent_runner():
                    "last_activity": os.path.getmtime(bridge_state) if os.path.exists(bridge_state) else None},
         "memory": {"running": has_proc(procs, "agent_memory") or has_proc(procs, "memory")},
         "workflows": workflows(),
-        "cron": cron_jobs(),
     }
 
 
@@ -576,25 +581,27 @@ def inventory(status):
     """Everything the console shows that can appear or disappear, keyed by a
     stable id. `known` lists the kinds whose source was readable this run, so
     an unreadable source (docker or systemd down) never looks like removals."""
-    items, known = {}, {"project", "role", "workflow", "chat"}
+    items, known = {}, {"chat"}
     ar = status["agent_runner"]
+    if ar is not None:
+        known.update({"project", "role", "workflow"})
 
     def add(i, kind, name, where, detail=""):
         items[i] = {"kind": kind, "name": name, "where": where, "detail": detail, "evidence": None}
 
-    for c in (ar["container"], status["job_bot"]["container"], status["claude_agent"]["container"]):
+    for c in ([ar["container"]] if ar else []) + [status["job_bot"]["container"], status["claude_agent"]["container"]]:
         if c["state"] != "unknown":
             known.add("container")
             add("container:" + c["name"], "container", c["name"], "Docker", c["state"])
-    for w in ar["workers"]:
+    for w in (ar or {}).get("workers", []):
         add("project:" + w["repo"], "project", w["repo"], RUNNER_CT, w["status"])
         for role, r in w["roles"].items():
             add(f"role:{w['repo']}:{role}", "role", role, w["repo"], f"{r['total']} sessions")
-    for wf in ar.get("workflows", []):
+    for wf in (ar or {}).get("workflows", []):
         add(f"workflow:{wf['repo']}:{wf['file']}", "workflow", wf["name"], wf["repo"], ", ".join(wf["crons"]))
     if sh(["crontab", "-l"]) is not None:
         known.add("cron")
-        for job, c in (ar.get("cron") or {}).items():
+        for job, c in status["cron"].items():
             add("cron:" + job, "cron", job, "crontab", c["schedule"] + ("" if c["enabled"] else " (off)"))
     for t in status["overwatch"]["tiers"]:
         if t["timer"] != "unknown":
@@ -678,10 +685,11 @@ def site():
         catalog = {}
     return {"name": cfg("site", "name", "agents"), "timezone": cfg("site", "timezone", "UTC"),
             "host": cfg("site", "host", ""), "github_owner": cfg("site", "github_owner", ""),
-            "ops_repo": OPS_REPO, "containers": {"runner": RUNNER_CT, "jobbot": JOBBOT_CT, "claude": CLAUDE_CT},
+            "ops_repo": OPS_REPO if LOOP else None, "agent_loop": LOOP,
+            "containers": {**({"runner": RUNNER_CT} if LOOP else {}), "jobbot": JOBBOT_CT, "claude": CLAUDE_CT},
             "ports": cfg("site", "ports", {}), "overwatch_unit": OW_UNIT,
             "infisical_unit": cfg("infisical", "unit", "infisical-agent"),
-            "paths": {"projects": PROJECTS, "infisical_templates": INFISICAL_TEMPLATES,
+            "paths": {"projects": PROJECTS if LOOP else None, "infisical_templates": INFISICAL_TEMPLATES,
                       "install": cfg("paths", "install", "/opt/agent-console"),
                       "password": cfg("console", "password_file", "/etc/agent-console/password"),
                       "log": cfg("console", "log", "/var/lib/agent-console/actions.log")},
@@ -689,8 +697,8 @@ def site():
 
 
 def main():
-    status = {"generated": NOW, "site": site(), "host": host(), "agent_runner": agent_runner(), "job_bot": job_bot(),
-              "claude_agent": claude_agent(), "overwatch": overwatch(), "infisical": infisical()}
+    status = {"generated": NOW, "site": site(), "host": host(), "agent_runner": agent_runner(), "cron": cron_jobs(),
+              "job_bot": job_bot(), "claude_agent": claude_agent(), "overwatch": overwatch(), "infisical": infisical()}
     os.makedirs(OUT, exist_ok=True)
     ledger = update_ledger(*inventory(status))
     status["ledger"] = ledger

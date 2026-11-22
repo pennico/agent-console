@@ -86,6 +86,11 @@ OWNER_LOGIN = os.environ.get("OWNER_LOGIN", "")
 LOG = os.environ.get("CONSOLE_LOG", cfg("console", "log", "/var/lib/agent-console/actions.log"))
 _TEMPLATES = cfg("infisical", "templates", "/srv/infisical/templates")
 JOBBOT_TEMPLATE = os.environ.get("JOBBOT_TEMPLATE", f"{_TEMPLATES}/{cfg('jobbot', 'template', 'job-bot')}.tmpl")
+# The agent loop is optional: without a [runner] section its actions answer "not configured" and the
+# console never touches its container. (Not to be confused with this file's own `runner` mode below.)
+LOOP = isinstance(CFG.get("runner"), dict)
+LOOP_ACTIONS = ("overseer-now", "pause", "resume", "stop-session", "role-model", "backend")
+NO_LOOP = "The agent loop isn't configured on this site (no [runner] section in the console config)."
 RUNNER_TEMPLATE = os.environ.get("RUNNER_TEMPLATE", f"{_TEMPLATES}/{cfg('runner', 'template', 'agent-runner')}.tmpl")
 ROLES = ("impl", "arch", "qa", "adv", "verify", "overseer", "chat")   # agent_backend.py AGENT_BACKEND_<ROLE>
 RUNNER_DIR = os.environ.get("AGENT_RUNNER_DIR", cfg("runner", "dir", "/srv/agent-runner"))
@@ -105,7 +110,7 @@ OVERWATCH_CALENDAR = "/usr/local/sbin/overwatch-calendar"
 TZ = ZoneInfo(cfg("site", "timezone", "UTC"))
 OVERWATCH_TIERS = tuple(cfg("overwatch", "tiers", ()))
 OW_UNIT = cfg("overwatch", "unit_prefix", "overwatch-")
-CONTAINERS = (RUNNER_CT, JOBBOT_CT, CLAUDE_CT)
+CONTAINERS = ((RUNNER_CT,) if LOOP else ()) + (JOBBOT_CT, CLAUDE_CT)
 CRON_JOBS = {k: v.get("match", k) for k, v in (CFG.get("cron") or {}).items() if isinstance(v, dict)}   # as in agent-status.py
 RUN_WINDOW = cfg("jobbot", "run_window", None)   # ["06:45", "07:45"]: no manual run or restart next to the scheduled one
 CRON_OFF = "#agent-console-off# "
@@ -326,15 +331,15 @@ def available():
     template_ok = os.access(JOBBOT_TEMPLATE, os.W_OK) and restart_ok
     return {
         "restart": True, "stop": True, "start": True,
-        "overseer-now": True,
         "jobbot-run-now": jobbot_once_argv() is not None,
         "jobbot-time": template_ok, "jobbot-mail": template_ok,
-        "role-model": os.access(RUNNER_TEMPLATE, os.W_OK) and restart_ok,
         "infisical-rerender": restart_ok,
-        # only once agent-runner runs a supervisor that reads the flags
-        **dict.fromkeys(("pause", "resume", "stop-session"),
-                        run(["docker", "exec", RUNNER_CT, "grep", "-q", "CONTROL_DIR", CT_SUPERVISOR], 15)[0] == 0),
-        "backend": os.access(AGENTS_MODE, os.X_OK),
+        **({"overseer-now": True,
+            "role-model": os.access(RUNNER_TEMPLATE, os.W_OK) and restart_ok,
+            # only once agent-runner runs a supervisor that reads the flags
+            **dict.fromkeys(("pause", "resume", "stop-session"),
+                            run(["docker", "exec", RUNNER_CT, "grep", "-q", "CONTROL_DIR", CT_SUPERVISOR], 15)[0] == 0),
+            "backend": os.access(AGENTS_MODE, os.X_OK)} if LOOP else dict.fromkeys(LOOP_ACTIONS, False)),
         "cron": any(n in crontab for n in CRON_JOBS.values()),
         # one-click only with the optional sudoers rules; otherwise the page uses the console terminal
         **({"overwatch-run": sudo_ok("/usr/bin/systemctl", "start", "--no-block", f"{OW_UNIT}{OVERWATCH_TIERS[0]}.service"),
@@ -365,6 +370,8 @@ def now_iso():
 def perform(name, target, value, login):
     """Validate and run one action. Returns (http status, body). This is the
     trust boundary: the web side's checks are repeated here."""
+    if name in LOOP_ACTIONS and not LOOP:
+        return 404, {"error": NO_LOOP}
     spec = ACTIONS.get(name)
     targets = spec and (spec["targets"]() if callable(spec["targets"]) else spec["targets"])
     if not spec or target not in targets:

@@ -522,6 +522,17 @@ const SITE = () => (data && data.site) || {};
 const CAT = () => SITE().catalog || {};
 const CT = () => Object.assign({runner: "agent-runner", jobbot: "job-bot", claude: "claude-agent"}, SITE().containers || {});
 const OPS = () => SITE().ops_repo || "ops";
+// The agent loop (runner container, workers, overseer, bridge, memory, roles) is optional:
+// a site without a [runner] section sends agent_runner: null and the page leaves all of it out.
+const HAS_LOOP = () => !!(data && data.agent_runner);
+// Host cron jobs: top level since the loop became optional; older snapshots kept them under agent_runner.
+const CRON = d => d.cron || (d.agent_runner && d.agent_runner.cron) || {};
+function cronCtrls(job, c) {
+  const label = c.label || job;
+  return [{label: label + " schedule", action: "cron", target: job, input: {type: "text", value: c.schedule, placeholder: "0 4 1 * *"}, note: "Cron format: minute hour day-of-month month day-of-week, server time."},
+    c.enabled ? {label: "Stop " + label, action: "cron", target: job, value: "off", danger: true}
+              : {label: "Resume " + label, action: "cron", target: job, value: "on", primary: true}];
+}
 const SECTION_KIND = () => ({[CT().runner]: "container", [CT().jobbot]: "container", [CT().claude]: "container", "Overwatch": "host timers"});
 
 // ---- links ----
@@ -621,7 +632,14 @@ function sessionsTable(rows) {
 
 function build(d) {
   const out = [];
-  const ar = d.agent_runner, cs = containerStatus(ar.container), be = ar.backend, R = CT().runner, J = CT().jobbot, C = CT().claude;
+  const ar = d.agent_runner, J = CT().jobbot, C = CT().claude;
+  if (ar) buildLoop(d, out);
+  buildRest(d, out, J, C);
+  return out;
+}
+
+function buildLoop(d, out) {
+  const ar = d.agent_runner, cs = containerStatus(ar.container), be = ar.backend, R = CT().runner;
   const P = (SITE().paths || {}).projects || "projects";
   const NO_TICK = "The 5-minute tick is a constant in the supervisor; making it adjustable is a change in the agent loop.";
   const arStop = containerCtrl(R, ar.container, "Stopping halts every worker, the overseer, the Telegram bridge and agent-memory until you start it again.");
@@ -665,12 +683,9 @@ function build(d) {
     }
     if ((ar.workflows || []).some(x => x.repo === w.repo && x.gate_var))
       links.push(["Repository variables", gh(w.repo, "/settings/variables/actions"), "Arm or disarm the gated jobs"]);
-    for (const [job, c] of Object.entries(ar.cron || {}).filter(([, c]) => c.project === w.repo)) {
-      const label = c.label || job;
-      extra.push(`<b>${esc(label)}</b>: ${esc(cronHuman(c.schedule))} · host cron${c.enabled ? "" : ' · <span class="warn">stopped</span>'}`);
-      ctrls.push({label: label + " schedule", action: "cron", target: job, input: {type: "text", value: c.schedule, placeholder: "0 4 1 * *"}, note: "Cron format: minute hour day-of-month month day-of-week, server time."});
-      ctrls.push(c.enabled ? {label: "Stop " + label, action: "cron", target: job, value: "off", danger: true}
-                           : {label: "Resume " + label, action: "cron", target: job, value: "on", primary: true});
+    for (const [job, c] of Object.entries(CRON(d)).filter(([, c]) => c.project === w.repo)) {
+      extra.push(`<b>${esc(c.label || job)}</b>: ${esc(cronHuman(c.schedule))} · host cron${c.enabled ? "" : ' · <span class="warn">stopped</span>'}`);
+      ctrls.push(...cronCtrls(job, c));
     }
     out.push({id: "w-" + w.repo, lid: "project:" + w.repo, section: R, child: true, name: w.repo, status, sub,
       time: w.current ? w.current.start : last && (last.end || last.start), where: R + " · worker",
@@ -726,7 +741,9 @@ function build(d) {
     tags: {cadence: ["on", "long-running"], conns: ["local only"]},
     schedule: {now: "Continuous", state: cs === "up" && ar.memory.running ? "on" : "off", src: "started by the supervisor", extra: ["Stops and starts with " + R + "."]},
     body: `<div class="facts">${fact("Process", ar.memory.running ? '<span class="ok">running</span>' : '<span class="bad">not running</span>')}</div>`, cmds: []});
+}
 
+function buildRest(d, out, J, C) {
   const jb = d.job_bot, js = containerStatus(jb.container);
   const tz = jb.tz || SITE().timezone || "UTC";
   const jbMail = jb.mail_interval_s !== null, jbChat = jb.chat !== false;   // optional parts, off per site
@@ -819,7 +836,6 @@ function build(d) {
       acts: [{label: "Accept current security state", action: "overwatch-accept", target: "all", note: "Tells the reviewer the current security changes are intended."}],
       body: "", links: [Lk("botfather")], cmds: [["Timers", `systemctl list-timers '${unit}*'`]]});
   }
-  return out;
 }
 
 // Descriptions, links and commands from the private catalog override the generic text above.
@@ -972,8 +988,8 @@ function buildSchedules(d, agents) {
     head: "Stays connected so you can open a chat from the phone at any time; restarted when it exits.",
     tags: rc.tags, schedule: rc.schedule, occ: {kind: "continuous"}, links: rc.links, cmds: rc.cmds});
   const br = it("bridge");
-  const brC = ar.bridge.container && ar.bridge.container.name;
-  sch({id: "sch-bridge", group: "Always on", name: "Telegram bridge", sub: (brC || R) + " · notification spool + Telegram", agent: "bridge",
+  const brC = ar && ar.bridge.container && ar.bridge.container.name;
+  if (ar) sch({id: "sch-bridge", group: "Always on", name: "Telegram bridge", sub: (brC || R) + " · notification spool + Telegram", agent: "bridge",
     where: brC || R, defined: brC ? "its own container " + brC : "started by the supervisor", status: upOr(br.status), head: br.head, tags: br.tags, schedule: br.schedule,
     occ: {kind: "continuous"}, links: br.links, cmds: br.cmds});
   const jc = it("jb-chat");
@@ -982,7 +998,7 @@ function buildSchedules(d, agents) {
     occ: {kind: "continuous"}, links: jc.links, cmds: jc.cmds});
 
   const arIt = it("agent-runner");
-  sch({id: "sch-ticks", group: "Frequent", name: "Worker ticks", sub: ar.workers.length + " project workers · " + R, agent: "agent-runner",
+  if (ar) sch({id: "sch-ticks", group: "Frequent", name: "Worker ticks", sub: ar.workers.length + " project workers · " + R, agent: "agent-runner",
     where: R, defined: "the supervisor's restart delay (5 min)", status: upOr(arIt.status),
     head: "Each worker checks GitHub for work every 5 minutes and runs sessions back to back while there is work. An idle tick costs only git and gh queries, no model call.",
     tags: {cadence: ["on", "every 5 min"], models: arIt.tags.models, conns: ["GitHub", "Telegram"]},
@@ -999,12 +1015,12 @@ function buildSchedules(d, agents) {
   sch({id: "sch-jobbot", group: "Daily", name: "Daily job search", sub: "Mon–Fri " + (jb.run_at || "—") + " · " + J, agent: "job-bot",
     where: J, defined: "RUN_AT in " + J + "'s .env (Infisical template)", status: upOr(jbIt.status), head: jbIt.head, tags: jbIt.tags, schedule: jbIt.schedule,
     occ: {kind: "times", times: (f, t) => jb.run_at ? weekdayTimes(jb.run_at, f, t) : []}, links: jbIt.links, cmds: jbIt.cmds});
-  const ov = it("overseer"), ovLast = ar.overseer.last, ovAt = ovLast ? ((ovLast.end || ovLast.start) + 86400) * 1000 : null;
-  sch({id: "sch-overseer", group: "Daily", name: "Overseer", sub: "≤ once a day · " + R, agent: "overseer",
+  const ov = it("overseer"), ovLast = ar && ar.overseer.last, ovAt = ovLast ? ((ovLast.end || ovLast.start) + 86400) * 1000 : null;
+  if (ar) sch({id: "sch-overseer", group: "Daily", name: "Overseer", sub: "≤ once a day · " + R, agent: "overseer",
     where: R, defined: "the supervisor's 24 h minimum", status: upOr(ov.status), head: ov.head, tags: ov.tags, schedule: ov.schedule,
     occ: {kind: "earliest", at: ovAt && ovAt > now ? ovAt : now}, links: ov.links, cmds: ov.cmds});
   const owner = SITE().github_owner;
-  for (const wf of ar.workflows || []) {
+  for (const wf of (ar && ar.workflows) || []) {
     const gate = wf.gate_var, human = wf.crons.map(c => cronHuman(c, "UTC")).join(", ");
     const wfUrl = gh(wf.repo, "/actions/workflows/" + wf.file), varsUrl = gh(wf.repo, "/settings/variables/actions");
     sch({id: "sch-wf-" + wf.repo + "-" + wf.name, lid: "workflow:" + wf.repo + ":" + wf.file, group: groupOf(human),
@@ -1028,21 +1044,23 @@ function buildSchedules(d, agents) {
       occ: {kind: "times", times: (f, to) => calTimes(cal, f, to) || (t.next && t.next * 1000 >= f && t.next * 1000 <= to ? [t.next * 1000] : [])},
       links: o.links, cmds: o.cmds});
   }
-  for (const [job, c] of Object.entries(ar.cron || {})) {
-    const owner_item = c.project ? it("w-" + c.project) : null, human = cronHuman(c.schedule);
+  for (const [job, c] of Object.entries(CRON(d))) {
+    const human = cronHuman(c.schedule);
+    // shown under its project's worker when there is one; a site without the agent loop has none
+    const ownerId = c.project && A["w-" + c.project] ? "w-" + c.project : A["agent-runner"] ? "agent-runner" : null;
     sch({id: "sch-cron-" + job, lid: "cron:" + job, group: groupOf(human), name: c.label || job, sub: human + (c.project ? " · " + c.project : " · host"),
-      agent: c.project ? "w-" + c.project : "agent-runner", where: "host cron", defined: "crontab line with " + (c.match || job), status: "up",
+      agent: ownerId, where: "host cron", defined: "crontab line with " + (c.match || job), status: "up",
       head: "A host cron job" + (c.project ? " for " + c.project : "") + ".",
       tags: {cadence: ["sched", "cron"], conns: []},
       schedule: {now: human, state: c.enabled ? "on" : "off", src: "crontab: " + c.schedule + " (server time)",
-        ctrls: owner_item ? (owner_item.schedule.ctrls || []).filter(x => x.action === "cron" && x.target === job) : []},
+        ctrls: cronCtrls(job, c)},
       occ: {kind: "times", times: (f, t) => cronTimes(c.schedule, f, t, false)}, links: [], cmds: []});
   }
   for (const s of out) {
     const list = s.occ.times ? (s.occ.times(now, now + 400 * DAY) || []).slice(0, 3) : [];
     const nextTxt = list.length ? list.map(t => esc(when(t / 1000))).join("<br>")
       : esc(s.occ.kind === "continuous" ? "Runs continuously" : s.occ.kind === "interval" ? s.schedule.now : s.occ.kind === "earliest" && s.next ? "Earliest " + when(s.next / 1000) : s.occ.kind === "off" ? "Stopped" : "—");
-    s.body = `<div class="facts">${fact("Next runs", nextTxt)}${fact("Defined in", esc(s.defined))}${fact("Belongs to", `<button type="button" class="goto" data-goto="${esc(s.agent)}">${esc(it(s.agent).name)} →</button>`)}</div>`;
+    s.body = `<div class="facts">${fact("Next runs", nextTxt)}${fact("Defined in", esc(s.defined))}${s.agent ? fact("Belongs to", `<button type="button" class="goto" data-goto="${esc(s.agent)}">${esc(it(s.agent).name)} →</button>`) : ""}</div>`;
   }
   return out.sort((a, b) => SCH_GROUPS.indexOf(a.section) - SCH_GROUPS.indexOf(b.section));
 }
@@ -1188,7 +1206,7 @@ function renderSide() {
   modes.hidden = view !== "agents";
   const mode = (m, l, ico) => `<button type="button" role="tab" class="nav subtab" data-mode="${m}" aria-selected="${agentsMode === m}" aria-current="${agentsMode === m}">` +
     `<span class="ico">${ico}</span><span class="label">${l}</span></button>`;
-  modes.innerHTML = `<h3>View</h3>${mode("location", "By location", "▤")}${mode("roles", "Roles", "◫")}`;
+  modes.innerHTML = `<h3>View</h3>${mode("location", "By location", "▤")}${HAS_LOOP() ? mode("roles", "Roles", "◫") : ""}`;
   const nav = (key, label, rows) => `<button type="button" class="nav" data-navgroup="${esc(key || "")}" aria-current="${(key || null) === cur}">` +
     `<span class="ico">${groupDot(rows)}</span><span class="label">${esc(label)}</span><span class="n">${rows.length}</span></button>`;
   document.getElementById("groups").innerHTML = `<h3>${view === "agents" && agentsMode === "roles" ? "Roles" : "Groups"}</h3>` +
@@ -1400,6 +1418,7 @@ function renderCounts() {
 }
 function render(force) {
   if (!data) return;
+  if (agentsMode === "roles" && !HAS_LOOP()) agentsMode = "location";   // roles are the agent loop's
   agentItems = hintify(catalogize(build(data)));
   items = lifecycle(infisicalize(hintify(view === "schedules" ? catalogize(buildSchedules(data, agentItems))
     : view === "connections" ? buildConnections(data, agentItems).concat(buildInfisical(agentItems), consoleItems())
@@ -1566,7 +1585,7 @@ const GRID_ROLES = ["impl", "arch", "qa", "adv", "verify", "overseer"];
 const ROLE_KINDS = {"Pipeline roles": "one session per step", "Loop-wide roles": ""};
 const heat = n => n >= 6 ? 3 : n >= 3 ? 2 : n >= 1 ? 1 : 0;
 function modelFor(role, backend, pins) {
-  const p = (pins || (data && data.agent_runner.role_pins) || {})[role];
+  const p = (pins || (HAS_LOOP() && data.agent_runner.role_pins) || {})[role];
   if (p) return p === "claude" ? "claude" : "mistral";
   return roleModel(role, backend);
 }
@@ -1592,6 +1611,7 @@ function setAgentsMode(m) {
 }
 
 function buildRoles(d) {
+  if (!d.agent_runner) return [];
   const ar = d.agent_runner, be = ar.backend, pins = ar.role_pins || {}, lim = ar.limits || {};
   const price = lim.max_price ? "$" + lim.max_price : "$10 (default)";
   const P = (SITE().paths || {}).projects || "projects", R = CT().runner;
@@ -1642,7 +1662,7 @@ function buildRoles(d) {
 
 function renderRoleGrid() {
   const box = document.getElementById("rolegrid");
-  box.hidden = !(view === "agents" && agentsMode === "roles");
+  box.hidden = !(view === "agents" && agentsMode === "roles" && HAS_LOOP());
   if (box.hidden || !data) return;
   const ar = data.agent_runner, be = ar.backend, pins = ar.role_pins || {};
   const defs = GRID_ROLES.map(k => roleDefs().find(r => r.key === k));
@@ -1703,7 +1723,7 @@ function lifecycle(list) {
 // Template names default to the container (or project) they render for; the catalog can say otherwise.
 function infUsers() {
   const ws = ((data && data.agent_runner && data.agent_runner.workers) || []).map(w => "w-" + w.repo);
-  const out = {[CT().runner]: ["agent-runner", ...ws, "overseer", "bridge", "memory"], [CT().jobbot]: ["job-bot", "gmail", "jb-chat"], [CT().claude]: ["claude-agent"]};
+  const out = {...(HAS_LOOP() ? {[CT().runner]: ["agent-runner", ...ws, "overseer", "bridge", "memory"]} : {}), [CT().jobbot]: ["job-bot", "gmail", "jb-chat"], [CT().claude]: ["claude-agent"]};
   for (const w of ws) out[w.slice(2)] = [w];
   return Object.assign(out, CAT().inf_users || {});
 }

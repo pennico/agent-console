@@ -20,6 +20,10 @@ collector = "/opt/agent-console/agent-status.py"
 log = "/var/lib/agent-console/actions.log"
 password_file = "/etc/agent-console/password"
 
+# The agent loop (runner container, project workers, overseer, Telegram bridge, memory).
+# OPTIONAL: delete [runner] and [runner.activity] on a site without it; the console then
+# leaves the loop out of every view and its actions answer "not configured". Keeping the
+# section, even empty, turns the loop on with these defaults.
 [runner]
 dir = "/srv/agent-runner"                       # the agent loop's checkout on the host
 # projects = "/srv/agent-runner/projects"       # default: <dir>/projects
@@ -76,6 +80,7 @@ unit_prefix = "overwatch-"
 # ]
 
 # Host cron jobs the console shows and can reschedule or pause (one table per job).
+# They don't need the agent loop.
 # [cron.nightly-backup]
 # match = "nightly-backup.sh"                   # text that identifies the crontab line
 # project = "my-project"                        # optional: show it under this project
