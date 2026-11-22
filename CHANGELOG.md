@@ -4,6 +4,18 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+- **The agent loop is optional**: a config without a `[runner]` section has no
+  agent loop. The collector then writes `"agent_runner": null` and never reads
+  the runner's folders or container; the page leaves out the runner section,
+  workers, overseer, Telegram bridge, agent-memory, the Roles view and the
+  loop's schedules; the loop's actions (`overseer-now`, `pause`, `resume`,
+  `stop-session`, `role-model`, `backend`) answer "not configured" and the
+  runner container is no longer a restart/stop/start target. Configs that
+  have the section work as before. The host action runner is unchanged.
+- Host cron jobs moved from `agent_runner.cron` to a top-level `cron` in
+  `status.json` (the page still reads the old place), and a cron job's
+  schedule controls now also show in the Schedules view when it belongs to
+  no project worker.
 - **Your own commands in the console terminal**: `[terminal.commands.<name>]` in
   the config (fixed argv steps, an optional read-only `preview` shown before
   the y/N question, `notes`). Open one with `?arg=run&arg=<name>`, for example

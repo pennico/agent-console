@@ -125,3 +125,36 @@ def test_available_reports_what_the_host_allows(console):
     assert av["restart"] and av["cron"] and av["backend"]
     assert av["pause"]                   # the fake supervisor has CONTROL_DIR
     assert av["role-model"]              # template writable, restart allowed (fake sudo)
+
+
+@pytest.fixture
+def console_no_loop(site, monkeypatch):
+    """A site config without [runner] / [runner.activity]: no agent loop."""
+    text = site["config"].read_text()
+    start = text.index("[runner]\n")
+    end = text.index("[jobbot]\n")
+    site["config"].write_text(text[:start] + text[end:])
+    mod = load("agent-console")
+    monkeypatch.setattr(mod, "refresh_status", lambda: None)
+    return mod
+
+
+@pytest.mark.parametrize("action,target,value", [
+    ("overseer-now", "alpha", ""), ("overseer-now", "ops", ""),
+    ("pause", "beta", ""), ("resume", "beta", ""), ("stop-session", "alpha", ""),
+    ("role-model", "impl", "claude"), ("backend", "claude", ""),
+])
+def test_loop_actions_say_not_configured_without_a_runner_section(console_no_loop, site, action, target, value):
+    code, body = console_no_loop.perform(action, target, value, "o")
+    assert code == 404 and "isn't configured" in body["error"]
+    assert calls(site) == [] and not site["log"].exists()
+
+
+def test_without_a_runner_section_the_rest_still_works(console_no_loop, site):
+    assert console_no_loop.perform("restart", "agent-runner", "", "o")[0] == 400   # not a known container any more
+    assert console_no_loop.perform("restart", "job-bot", "", "o")[0] == 200
+    assert console_no_loop.perform("cron", "nightly-backup", "off", "o")[0] == 200
+    av = console_no_loop.available()
+    assert not any(av[a] for a in console_no_loop.LOOP_ACTIONS)
+    assert av["restart"] and av["cron"]
+    assert not [c for c in calls(site) if "agent-runner" in c]             # never touches the runner container

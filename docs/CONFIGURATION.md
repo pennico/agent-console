@@ -21,12 +21,40 @@ Two files, both outside the code and both free of secret values:
 | `[site]` | all | `timezone` (dispatcher log names and job times use it), `github_owner` (repo links), `catalog` path, `disks` (mount points shown in the Account box) |
 | `[paths]` | collector, page | `web`: where `index.html`, `status.json` and `ledger.json` live; `install`: shown in commands |
 | `[console]` | web side, runner, terminal | runner socket, passkey file, audit log, password file, collector path (run after each action) |
-| `[runner]` | collector, runner | the runner's checkout (`dir`, `projects`), container name, its Infisical template name, the project that runs the overseer (`ops_repo`), the backend switch script (`mode_command`), `app_decommissioned`, `[runner.activity]` evidence files, `bridge_container` + `bridge_state` when the Telegram bridge runs in its own container |
+| `[runner]` | collector, runner | **optional: leave the section out on a site without the agent loop** (see below). The runner's checkout (`dir`, `projects`), container name, its Infisical template name, the project that runs the overseer (`ops_repo`), the backend switch script (`mode_command`), `app_decommissioned`, `[runner.activity]` evidence files, `bridge_container` + `bridge_state` when the Telegram bridge runs in its own container |
 | `[jobbot]` | collector, runner | container, `.env`, template name, `run_window` that blocks manual runs next to the scheduled one, `mail_monitor` / `chat` (false hides those parts), `last_run_file` (its mtime = last run when the log has none) |
 | `[claude]` | collector | container name and the transcripts folder |
 | `[infisical]` | collector, runner | templates folder, agent config, unit name, the restart command, extra setting names whose values may be shown |
 | `[overwatch]` | collector, runner, terminal | timer tiers and the unit prefix (`<prefix><tier>.timer`) |
 | `[cron.<id>]` | collector, runner | one table per host cron job: `match` (text in the crontab line), `project`, `label` |
+
+### A site without the agent loop
+
+The agent loop (the runner container with its project workers, overseer,
+Telegram bridge and memory service) is optional. Whether a site has it is
+decided by one thing: **is there a `[runner]` table in `console.toml`?**
+
+- **Section present** (even empty): the loop is on, with the defaults for any
+  key you leave out. Existing configs keep working unchanged.
+- **Section absent** (no `[runner]` and no `[runner.activity]`): the collector
+  writes `"agent_runner": null` to `status.json` and never reads the runner's
+  folders or its container. The page leaves out the runner section, its
+  workers, overseer, bridge and memory, the Roles view, backend and mode tags
+  and the loop's schedules (worker ticks, overseer, bridge, project GitHub
+  Actions crons). The loop's actions (`overseer-now`, `pause`, `resume`,
+  `stop-session`, `role-model`, `backend`) answer "not configured", and the
+  runner container is no longer a target for restart, stop or start.
+
+Host cron jobs (`[cron.<id>]`) are not part of the loop: they stay in
+both cases (in `status.json` they are now the top-level `cron` object). A
+cron job whose `project` has no worker shows in the Schedules view only.
+Drop the catalog entries that describe the loop (`agent-runner`, `w-<repo>`,
+`overseer`, `bridge`, `memory`, `role-<key>`) when you remove the section;
+entries for items that don't exist are ignored either way.
+
+The host action runner (`agent-console.py runner`, `[console] runner_sock`)
+is a different thing with a similar name: it runs every console action and
+is needed with or without the agent loop.
 
 Environment variables override a few paths. This is how the container finds
 things at its own mount points:
@@ -53,15 +81,15 @@ The catalog refers to items by id:
 
 | Id | Item |
 |---|---|
-| `agent-runner`, `job-bot`, `claude-agent` | the three containers (ids stay fixed even if you rename the containers) |
-| `w-<repo>` | a project worker |
-| `overseer`, `bridge`, `memory` | the runner's other processes |
+| `agent-runner`, `job-bot`, `claude-agent` | the three containers (ids stay fixed even if you rename the containers; `agent-runner` only with a `[runner]` section) |
+| `w-<repo>` | a project worker (agent loop) |
+| `overseer`, `bridge`, `memory` | the runner's other processes (agent loop) |
 | `gmail`, `jb-chat` | the job bot's mail monitor and chat |
 | `chat-<uuid>` | a Claude chat |
 | `ow-<tier>`, `ow-bot` | a review timer and its bot |
-| `role-<key>` | a role: `impl`, `arch`, `qa`, `adv`, `verify`, `overseer`, `chat` |
-| `sch-rc`, `sch-bridge`, `sch-jbchat` | always-on schedules |
-| `sch-ticks`, `sch-gmail`, `sch-jobbot`, `sch-overseer` | the other fixed schedules |
+| `role-<key>` | a role: `impl`, `arch`, `qa`, `adv`, `verify`, `overseer`, `chat` (agent loop) |
+| `sch-rc`, `sch-bridge`, `sch-jbchat` | always-on schedules (`sch-bridge` with the agent loop) |
+| `sch-ticks`, `sch-gmail`, `sch-jobbot`, `sch-overseer` | the other fixed schedules (`sch-ticks`, `sch-overseer` with the agent loop) |
 | `sch-wf-<repo>-<workflow>` | a GitHub Actions cron |
 | `sch-ow-<tier>` | a review timer's schedule |
 | `sch-cron-<id>` | a host cron job from `[cron.<id>]` |

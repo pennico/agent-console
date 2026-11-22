@@ -31,7 +31,9 @@ setTimeout(() => {
   out.search = buildSearchIndex().length;
   setHdrPop("account");
   out.account = document.getElementById("acct-pop").innerHTML.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ");   // \\s: this code sits in a template string
-  view = "agents"; agentsMode = "location"; render(true); sel[SK()] = "bridge";
+  view = "agents"; agentsMode = "location"; render(true);
+  const pick = id => items.some(i => i.id === id) ? id : items[0].id;   // a site without the agent loop has no bridge or overseer
+  sel[SK()] = pick("bridge");
   askDraft = "Why is it down?"; out.ask = askPrompt();
   // the media-library layout: side pane groups, toolbar chips, cards or list, the detail pane
   const html = id => document.getElementById(id).innerHTML, count = (h, re) => (h.match(re) || []).length;
@@ -42,8 +44,11 @@ setTimeout(() => {
   layout = "list"; renderList(); ui.rows = count(html("content"), /class="row /g); layout = "cards";
   navGroup[SK()] = ui.groups[1]; renderList(); ui.groupCards = count(html("content"), /class="card /g); ui.title = html("toolbar").match(/<h2>([^<]*)/)[1];
   navGroup[SK()] = null; chipSel = "running"; renderList(); ui.runningCards = count(html("content"), /class="card /g); chipSel = "all";
-  select("overseer"); ui.detailOpen = !document.getElementById("detail").hidden && html("detail").includes('id="d-close"');
+  select(pick("overseer")); ui.detailOpen = !document.getElementById("detail").hidden && html("detail").includes('id="d-close"');
   closeDetail(); ui.detailClosed = document.getElementById("detail").hidden;
   out.ui = ui;
+  out.modes = [...html("modes").matchAll(/data-mode="([a-z]+)"/g)].map(m => m[1]);
+  view = "agents"; agentsMode = "roles"; render(true);                       // e.g. a #role-… link
+  out.rolesFallback = {mode: agentsMode, gridHidden: document.getElementById("rolegrid").hidden};
   console.log(JSON.stringify(out));
 }, 100);`);

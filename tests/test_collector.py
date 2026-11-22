@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from conftest import CONSOLE, ROOT, SECRETS
+from conftest import CONSOLE, ROOT, SECRETS, calls
 
 
 @pytest.fixture
@@ -36,9 +36,10 @@ def test_schedules(status):
     ar = status["agent_runner"]
     assert ar["workflows"][0]["repo"] == "alpha" and ar["workflows"][0]["crons"] == ["10 0 * * *"]
     assert ar["workflows"][0]["gate_var"] == "ALPHA_NIGHTLY"
-    assert ar["cron"]["nightly-backup"] == {"schedule": "17 4 1 * *", "enabled": True, "match": "nightly-backup.sh",
-                                            "project": "alpha", "label": "nightly backup"}
-    assert ar["cron"]["disabled"]["enabled"] is False
+    cron = status["cron"]                                       # host-wide, not part of the agent loop
+    assert cron["nightly-backup"] == {"schedule": "17 4 1 * *", "enabled": True, "match": "nightly-backup.sh",
+                                      "project": "alpha", "label": "nightly backup"}
+    assert cron["disabled"]["enabled"] is False and "cron" not in ar
     assert status["job_bot"]["run_at"] == "07:30" and status["job_bot"]["next_run"] == "2026-10-24 07:30:00"
     daily = status["overwatch"]["tiers"][0]
     assert daily["calendar"] == "*-*-* 07:00:00" and daily["enabled"] and daily["next"]
@@ -175,3 +176,54 @@ def test_bridge_container_and_job_bot_without_optional_parts(site, monkeypatch):
     assert agents["bridge"]["where"].startswith("container · telegram-bridge")
     sched = {i["id"] for i in out["schedules:location"]}
     assert "sch-gmail" not in sched and "sch-jbchat" not in sched and "sch-bridge" in sched
+
+
+def without_runner(config):
+    """The site config with its [runner] and [runner.*] tables removed: a site without the agent loop."""
+    out, skip = [], False
+    for line in config.read_text().splitlines(keepends=True):
+        if line.startswith("["):
+            skip = line.startswith("[runner]") or line.startswith("[runner.")
+        if not skip:
+            out.append(line)
+    config.write_text("".join(out))
+
+
+def test_site_without_the_agent_loop(site):
+    """No [runner] section: agent_runner is null, nothing of the loop is read, the rest is unchanged."""
+    without_runner(site["config"])
+    r = subprocess.run([sys.executable, str(CONSOLE / "agent-status.py")], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    status = json.loads((site["web"] / "status.json").read_text())
+    assert status["agent_runner"] is None
+    assert status["site"]["agent_loop"] is False and "runner" not in status["site"]["containers"]
+    assert status["site"]["ops_repo"] is None and status["site"]["paths"]["projects"] is None
+    assert not [c for c in calls(site) if "agent-runner" in c]          # never inspects or execs into the runner
+    assert status["cron"]["nightly-backup"]["schedule"] == "17 4 1 * *"  # host cron jobs stay
+    assert status["job_bot"]["run_at"] == "07:30" and status["claude_agent"]["chats"]
+    assert status["overwatch"]["tiers"] and status["infisical"]["readable"]
+    led = status["ledger"]
+    assert not [k for k in led if k.startswith(("project:", "role:", "workflow:", "container:agent-runner"))]
+    assert "cron:nightly-backup" in led and "container:job-bot" in led and "template:agent-runner" in led
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    r = subprocess.run(["node", str(ROOT / "tests" / "page_smoke.js"), str(ROOT / "console" / "index.html"),
+                        str(site["web"] / "status.json")], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout)
+    agents = {i["id"]: i for i in out["agents:location"]}
+    assert {"job-bot", "claude-agent", "ow-daily", "ow-bot"} <= set(agents)
+    assert not {"agent-runner", "overseer", "bridge", "memory"} & set(agents)
+    assert not [i for i in agents if i.startswith(("w-", "role-"))]
+    assert "agent-runner" not in {i["section"] for i in agents.values()}
+    sched = {i["id"]: i for i in out["schedules:location"]}
+    assert {"sch-rc", "sch-jobbot", "sch-ow-daily", "sch-cron-nightly-backup", "sch-cron-disabled"} <= set(sched)
+    assert not {"sch-bridge", "sch-ticks", "sch-overseer"} & set(sched)
+    assert not [i for i in sched if i.startswith("sch-wf-")]
+    assert out["modes"] == ["location"]                                  # no Roles view without the loop
+    assert out["rolesFallback"] == {"mode": "location", "gridHidden": True}
+    assert out["agents:roles"] == out["agents:location"]                 # a roles link lands on the location view
+    assert "cn-gh" in {i["id"] for i in out["connections:location"]}
+    assert out["search"] > 10 and "Disk /" in out["account"]
+    ui = out["ui"]
+    assert ui["cards"] == len(out["agents:location"]) and ui["detailOpen"] and ui["detailClosed"]

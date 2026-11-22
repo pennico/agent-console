@@ -8,6 +8,9 @@ internet.
 
 It was built for one setup: an autonomous coding loop that runs one worker
 per GitHub project in a Docker container, plus a few other agents next to it.
+The coding loop is optional: a site whose config has no `[runner]` section
+gets the console without it (no runner container, workers, overseer, bridge,
+memory service or Roles view), and everything else works as before.
 The parts it reads are listed under [What it reads](#what-it-reads), and
 anything it can't find shows as unknown rather than failing. Site details
 (paths, names, descriptions, links) live in two private files
@@ -32,7 +35,7 @@ The palette is warm, with light and dark modes. The three views:
   - *Roles*: a projects × roles grid (sessions this week / total, shaded by
     activity, marks for running and failed) above the role list. Each role
     has its model, limits and recent sessions, plus a control that pins the
-    role to a model.
+    role to a model. Only on sites with the coding loop.
 - **Schedules**: a 7-day timeline (a dot per run, hollow when a run may not
   fire) above a list grouped by cadence. It covers worker ticks, GitHub
   Actions crons, host cron jobs, systemd timers and the bot's daily run.
@@ -101,7 +104,7 @@ Every source is optional. Missing ones show as "unknown".
 
 | Source | Expected shape |
 |---|---|
-| Runner container | a supervisor (`supervisor.py` with `PROJECT_REPOS = [...]`) that starts one worker per project; project checkouts under `projects/<repo>/`; optional pause flags `projects/.control/pause-<repo>` |
+| Runner container (only with a `[runner]` section) | a supervisor (`supervisor.py` with `PROJECT_REPOS = [...]`) that starts one worker per project; project checkouts under `projects/<repo>/`; optional pause flags `projects/.control/pause-<repo>` |
 | Dispatcher logs | `projects/<repo>/dispatcher/logs/<YYYYmmdd-HHMMSS>-<backend>-<role>.{json,txt,exit}`; `dispatcher/state.json` for blockers, quota pauses and roadmap state |
 | Runner settings | `AGENT_BACKEND`, `AGENT_BACKEND_<ROLE>` and `DISPATCH_*` limits from the runner's `.env` (only those keys are read) |
 | GitHub Actions | `schedule:` crons in each project's `.github/workflows/*.yml`, with an optional `vars.<NAME> == 'enabled'` gate |
