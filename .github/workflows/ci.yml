@@ -12,19 +12,39 @@ jobs:
   private-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - name: No private patterns in the tree
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scanner self-test
+        run: scripts/scan-private.sh --self-test
+      - name: No private patterns in the tree, the new commits and their authors
         env:
-          # Extra private patterns live in the repository variable PRIVATE_PATTERNS,
-          # never in this file (it is public).
-          PRIVATE_PATTERNS: ${{ vars.PRIVATE_PATTERNS }}
-        run: scripts/scan-private.sh
+          # The extra private patterns are the repository secret PRIVATE_PATTERNS (one line), never in this public
+          # file. Pushes to main and same-repo pull requests fail without it; pull requests from forks and Dependabot
+          # get no secrets and scan with the built-in patterns only (the script prints a notice).
+          PRIVATE_PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
+          REQUIRE_PRIVATE_PATTERNS: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) && '1' || '0' }}
+          BEFORE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          AFTER: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          scripts/scan-private.sh --length
+          scripts/scan-private.sh
+          # The new commits: their messages, added lines and identities.
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            scripts/scan-private.sh --history "$BEFORE..$AFTER"
+          else
+            echo "::notice::No earlier commit to compare with (new branch or force push): scanning every commit after the baseline"
+            scripts/scan-private.sh --history "$AFTER"
+          fi
 
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
       - run: pip install -r requirements-dev.txt
@@ -38,11 +58,13 @@ jobs:
         # 3.11 is the floor (tomllib); 3.13 matches the container image.
         python-version: ["3.11", "3.13"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - run: pip install -r requirements-dev.txt
@@ -52,7 +74,9 @@ jobs:
   image:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Build the web-side image
         run: |
           cp console/agent-console.py deploy/
