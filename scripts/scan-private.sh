@@ -114,7 +114,7 @@ if [ "${1:-}" = --history ]; then
     not=(--not "$b")
   fi
   # shellcheck disable=SC2086  # the range may be several rev-list words
-  commits=$(git rev-list $range "${not[@]}") || die "git rev-list failed for the range"
+  commits=$(git rev-list $range ${not[@]+"${not[@]}"}) || die "git rev-list failed for the range"
   # Identities: every author, committer and tagger must be a GitHub noreply address whose name is its login (or
   # GitHub's own web-flow identity). Anything else (a machine's user@host, a real address) is reported, not printed.
   bad_ids=""
