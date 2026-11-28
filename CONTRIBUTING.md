@@ -14,7 +14,8 @@ Thanks for your interest in improving agent-console. Please read the
   it when you read a new source.
 - **No site specifics in the code.** Paths, names, descriptions and links
   belong in `console.toml` or `catalog.json`. CI runs
-  `scripts/scan-private.sh`.
+  `scripts/scan-private.sh` on the tree and on the new commits (messages,
+  added lines; author and committer must be GitHub noreply addresses).
 - **Standard library only** on the host. The container adds `cryptography`
   for passkeys.
 - **One file for the page.** `console/index.html` has no build step and
@@ -28,6 +29,7 @@ pip install -r requirements-dev.txt
 pytest -q                       # needs node for the page smoke tests
 ruff check .
 scripts/scan-private.sh
+scripts/scan-private.sh --history origin/main..HEAD   # your commits: messages, added lines, noreply identities
 ```
 
 CI runs the scan, ruff, the tests on Python 3.11 and 3.13, and an image
